@@ -1,97 +1,128 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, list } from "@vercel/blob";
+import { put } from "@vercel/blob";
 import * as XLSX from "xlsx";
 
-const DATA_PREFIX = "excel-dashboard-data";
-const CONFIG_PREFIX = "excel-dashboard-config";
+const COLUMNS = [
+  "Order ID",
+  "Sap ID",
+  "Create Date",
+  "Vehicle id",
+  "Total Pay",
+  "Status Order",
+  "City Depot",
+  "Driver Group ID",
+  "Distance",
+];
+const DATE_COL = "Create Date";
 
-function parseDate(val: unknown): Date | null {
-  if (!val) return null;
-  if (val instanceof Date) return val;
-  const num = Number(val);
-  if (!isNaN(num) && num > 1000) {
-    // Excel serial date
-    const parsed = XLSX.SSF.parse_date_code(num);
-    if (parsed) return new Date(parsed.y, parsed.m - 1, parsed.d);
+function toISO(val: unknown): string | null {
+  if (val === null || val === undefined || val === "") return null;
+  if (typeof val === "number") {
+    try {
+      const info = XLSX.SSF.parse_date_code(val);
+      if (!info) return null;
+      const d = new Date(info.y, info.m - 1, info.d, info.H || 0, info.M || 0, Math.floor(info.S || 0));
+      return isNaN(d.getTime()) ? null : d.toISOString();
+    } catch {
+      return null;
+    }
   }
-  const str = String(val).trim();
-  const d = new Date(str);
-  if (!isNaN(d.getTime())) return d;
-  // DD/MM/YYYY
-  const parts = str.split(/[/\-\.]/);
-  if (parts.length === 3) {
-    const d2 = new Date(parts[2] + "-" + parts[1] + "-" + parts[0]);
-    if (!isNaN(d2.getTime())) return d2;
+  if (typeof val === "string" && val.trim()) {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d.toISOString();
   }
   return null;
 }
-
-export const config = { api: { bodyParser: false } };
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
-    // Load column config
-    let selectedColumns: string[] = [];
-    let createDateColumn = "Create Date";
-    const { blobs: configBlobs } = await list({ prefix: CONFIG_PREFIX });
-    if (configBlobs.length > 0) {
-      const cfg = await fetch(configBlobs[0].url).then((r) => r.json());
-      selectedColumns = cfg.columns || [];
-      createDateColumn = cfg.createDateColumn || "Create Date";
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { raw: true, defval: "" });
+
+    if (rawRows.length === 0) return NextResponse.json({ error: "Empty file" }, { status: 400 });
+
+    // Build case-insensitive column mapping (position-independent)
+    const fileKeys = Object.keys(rawRows[0]);
+    const colMap: Record<string, string> = {};
+    for (const col of COLUMNS) {
+      const match = fileKeys.find(
+        (k) => k.trim().toLowerCase() === col.trim().toLowerCase()
+      );
+      if (match) colMap[col] = match;
     }
 
-    // Parse Excel
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: "" });
-    if (rawData.length === 0) return NextResponse.json({ error: "File is empty" }, { status: 400 });
-
-    const allHeaders = Object.keys(rawData[0]);
-
-    // Filter columns by config (case-insensitive name match)
-    const headers =
-      selectedColumns.length > 0
-        ? allHeaders.filter((h) =>
-            selectedColumns.some((c) => c.trim().toLowerCase() === h.trim().toLowerCase())
-          )
-        : allHeaders;
-
-    // Keep only selected columns per row
-    const rows = rawData.map((row) => {
-      const out: Record<string, unknown> = {};
-      headers.forEach((h) => { out[h] = row[h]; });
-      return out;
+    // Transform rows: keep only mapped columns, convert Create Date to ISO
+    const rows = rawRows.map((raw) => {
+      const row: Record<string, unknown> = {};
+      for (const [ourCol, fileCol] of Object.entries(colMap)) {
+        let val: unknown = raw[fileCol];
+        if (ourCol === DATE_COL) {
+          const iso = toISO(val);
+          if (iso !== null) val = iso;
+        }
+        row[ourCol] = val;
+      }
+      return row;
     });
 
-    // Find max Create Date for TTL
-    const createDateCol = headers.find(
-      (h) => h.trim().toLowerCase() === createDateColumn.trim().toLowerCase()
-    );
+    const headers = Object.keys(colMap);
+
+    // Compute TTL from max Create Date
     let maxDate: Date | null = null;
-    if (createDateCol) {
-      rows.forEach((row) => {
-        const d = parseDate(row[createDateCol]);
-        if (d && (!maxDate || d > maxDate)) maxDate = d;
-      });
+    for (const row of rows) {
+      const v = row[DATE_COL];
+      if (v) {
+        const d = new Date(v as string);
+        if (!isNaN(d.getTime()) && (!maxDate || d > maxDate)) maxDate = d;
+      }
     }
-    const baseDate = maxDate || new Date();
-    const expiresAt = new Date(baseDate);
-    expiresAt.setDate(expiresAt.getDate() + 10);
 
-    // Store in Vercel Blob
-    const id = Date.now() + "-" + Math.random().toString(36).slice(2, 7);
-    const payload = { id, headers, rows, fileName: file.name, uploadedAt: new Date().toISOString(), expiresAt: expiresAt.toISOString(), rowCount: rows.length };
-    await put(DATA_PREFIX + "-" + id + ".json", JSON.stringify(payload), { access: "public", addRandomSuffix: false });
+    const now = new Date();
+    const uploadedAt = now.toISOString();
+    const expiresAt = new Date(
+      (maxDate ?? now).getTime() + 10 * 86400000
+    ).toISOString();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-    return NextResponse.json({ success: true, data: payload });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: "Failed to process file" }, { status: 500 });
+    const dataset = {
+      id,
+      headers,
+      rows,
+      fileName: file.name,
+      uploadedAt,
+      expiresAt,
+      rowCount: rows.length,
+    };
+
+    const blob = await put(
+      `excel-dashboard-data-${id}.json`,
+      JSON.stringify(dataset),
+      { access: "public", contentType: "application/json" }
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id,
+        headers,
+        fileName: file.name,
+        uploadedAt,
+        expiresAt,
+        rowCount: rows.length,
+        blobUrl: blob.url,
+      },
+    });
+  } catch (err) {
+    console.error("Upload error:", err);
+    return NextResponse.json(
+      { error: "Failed to process file" },
+      { status: 500 }
+    );
   }
 }
