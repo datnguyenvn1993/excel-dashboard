@@ -28,7 +28,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
       if (!res.ok) {
         setError(data.error || "Upload failed");
       } else {
-        setSuccess("✓ Imported " + data.data.rowCount + " rows from "" + data.data.fileName + """);
+        setSuccess(`✓ Imported ${data.data.rowCount} rows from "${data.data.fileName}"`);
         setTimeout(() => onUploadSuccess(), 1200);
       }
     } catch {
