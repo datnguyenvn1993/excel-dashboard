@@ -37,8 +37,8 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
       setSuccess(null);
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const XLSX = (await import("xlsx")) as any;
+        // Dynamic import — loads only when needed, works fully in browser
+        const XLSX = await import("xlsx");
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -52,6 +52,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           return;
         }
 
+        // Case-insensitive column mapping (position-independent)
         const fileKeys = Object.keys(rawRows[0]);
         const colMap: Record<string, string> = {};
         for (const col of COLUMNS) {
@@ -61,22 +62,30 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           if (match) colMap[col] = match;
         }
 
-        const rows = rawRows.map((raw: Record<string, unknown>) => {
+        // Transform rows: keep only mapped columns, convert Create Date to ISO
+        const rows = rawRows.map((raw) => {
           const row: Record<string, unknown> = {};
           for (const [ourCol, fileCol] of Object.entries(colMap)) {
             let val: unknown = raw[fileCol];
             if (ourCol === DATE_COL) {
               if (typeof val === "number") {
                 try {
-                  const info = XLSX.SSF.parse_date_code(val);
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const info = (XLSX as any).SSF.parse_date_code(val);
                   if (info) {
                     const d = new Date(
-                      info.y, info.m - 1, info.d,
-                      info.H || 0, info.M || 0, Math.floor(info.S || 0)
+                      info.y,
+                      info.m - 1,
+                      info.d,
+                      info.H || 0,
+                      info.M || 0,
+                      Math.floor(info.S || 0)
                     );
                     if (!isNaN(d.getTime())) val = d.toISOString();
                   }
-                } catch { /* keep original */ }
+                } catch {
+                  /* keep original value */
+                }
               } else if (typeof val === "string" && val.trim()) {
                 const d = new Date(val);
                 if (!isNaN(d.getTime())) val = d.toISOString();
@@ -99,14 +108,15 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           rowCount: rows.length,
         };
 
+        // Save to localStorage so data survives page refresh
         try {
           localStorage.setItem("excel-dashboard-data", JSON.stringify(parsed));
         } catch {
-          console.warn("localStorage quota exceeded");
+          console.warn("localStorage quota exceeded — data not persisted across refresh");
         }
 
         setSuccess(
-          `✓ Imported ${rows.length.toLocaleString()} rows from "${file.name}"`
+          `✓ Imported ${rows.length.toLocaleString()} rows from "${file.name}"` 
         );
         setTimeout(() => onUploadSuccess(parsed), 800);
       } catch (err) {
@@ -139,14 +149,30 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
       </div>
 
       <div
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer ${isDragging ? "border-blue-400 bg-blue-500/10" : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"}`}
+        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer
+          ${
+            isDragging
+              ? "border-blue-400 bg-blue-500/10"
+              : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"
+          }`}
         onClick={() => document.getElementById("file-input")?.click()}
       >
-        <input id="file-input" type="file" accept=".xlsx,.xls,.csv" className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
+        <input
+          id="file-input"
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) processFile(f);
+          }}
+        />
 
         {isUploading ? (
           <div className="flex flex-col items-center gap-3">
@@ -156,8 +182,18 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
         ) : success ? (
           <div className="flex flex-col items-center gap-3">
             <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <svg
+                className="w-6 h-6 text-green-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </div>
             <p className="text-green-400 font-medium">{success}</p>
@@ -166,9 +202,18 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
         ) : (
           <>
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700 flex items-center justify-center">
-              <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <svg
+                className="w-8 h-8 text-blue-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
               </svg>
             </div>
             <p className="text-white font-medium mb-1">Thả file vào đây</p>
@@ -180,8 +225,18 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
       {error && (
         <div className="flex items-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm max-w-lg w-full">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg
+            className="w-4 h-4 flex-shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
           {error}
         </div>
