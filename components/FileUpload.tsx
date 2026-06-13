@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { ParsedData } from "@/types/data";
 import { saveData } from "@/lib/storage";
 
-const COLUMNS = ["Order ID", "Status", "Depot", "Total Pay Display", "Pickup City", "Create Time"];
+const COLUMNS = ["Order ID", "Status", "Depot", "Total Pay Display", "Pickup City", "Create Time", "Sap Profile Id", "Distance"];
 
 // Match flexibly: cancel/cancelled/canceled, complete/completed, processing/in progress
 function isValidStatus(val: string): boolean {
@@ -97,7 +97,6 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
         console.log(`Giữ lại ${rows.length}/${rawRows.length} rows sau khi lọc Status`);
 
         if (rows.length === 0) {
-          // Show sample status values to help debug
           const sampleStatuses = [
             ...new Set(
               rawRows.slice(0, 500).map((r) => String(r[statusKey] ?? "").trim())
@@ -107,7 +106,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
             .slice(0, 8);
           setError(
             `Không có row nào khớp Status. Giá trị Status trong file: ${sampleStatuses.join(", ")}. \n` +
-            `Chấp nhận: Cancel/Cancelled, Complete/Completed, Processing.`
+              `Chấp nhận: Cancel/Cancelled, Complete/Completed, Processing.`
           );
           setProgress(null);
           return;
@@ -157,7 +156,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
       <div className="text-center">
         <h2 className="text-xl font-bold text-white mb-1">Import dữ liệu mới</h2>
         <p className="text-slate-400 text-sm">
-          Hỗ trợ .xlsx/.xls/.csv · Chỉ giữ: Order ID, Status, Depot, Total Pay Display, Pickup City
+          Hỗ trợ .xlsx/.xls/.csv · Cột: Order ID, Status, Depot, Total Pay Display, Pickup City, Create Time, Sap Profile Id, Distance
         </p>
         <p className="text-slate-500 text-xs mt-1">
           Chỉ lưu Status = Complete / Completed / Processing / Cancel / Cancelled
