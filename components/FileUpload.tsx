@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { ParsedData } from "@/types/data";
 import { saveData } from "@/lib/storage";
 
-const COLUMNS = ["Order ID", "Status", "Depot", "Total Pay Display", "Pickup City"];
+const COLUMNS = ["Order ID", "Status", "Depot", "Total Pay Display", "Pickup City", "Create Time"];
 
 // Match flexibly: cancel/cancelled/canceled, complete/completed, processing/in progress
 function isValidStatus(val: string): boolean {
