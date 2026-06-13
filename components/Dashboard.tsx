@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -31,6 +33,30 @@ function fmtRevenue(n: number) {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
   return n.toFixed(0);
+}
+
+// Parse "Create Time" → YYYY-MM-DD (handles ISO, DD/MM/YYYY, MM/DD/YYYY, etc.)
+function parseDate(val: unknown): string | null {
+  const s = String(val ?? "").trim();
+  if (!s) return null;
+  // Try native Date parse (ISO, RFC, etc.)
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  // Try DD/MM/YYYY or DD-MM-YYYY (Vietnamese format)
+  const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if (m) {
+    const d2 = new Date(`${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`);
+    if (!isNaN(d2.getTime())) return d2.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+function getStatusGroup(raw: string): "complete" | "processing" | "cancel" | "other" {
+  const s = raw.trim().toLowerCase();
+  if (s.startsWith("complete")) return "complete";
+  if (s.startsWith("process") || s === "in progress" || s === "inprogress") return "processing";
+  if (s.startsWith("cancel")) return "cancel";
+  return "other";
 }
 
 async function captureToClipboard(el: HTMLElement): Promise<void> {
@@ -103,6 +129,7 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
   const statusRef = useRef<HTMLDivElement>(null);
   const depotRef = useRef<HTMLDivElement>(null);
   const cityRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
   const A = useMemo(() => {
@@ -112,12 +139,14 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
     const depotCount: Record<string, number> = {};
     const depotRevenue: Record<string, number> = {};
     const cityCount: Record<string, number> = {};
+    const dailyCount: Record<string, { complete: number; processing: number; cancel: number; total: number }> = {};
 
     for (const r of rows) {
-      const s = String(r["Status"] ?? "").trim().toLowerCase();
-      if (s === "complete") complete++;
-      else if (s === "processing") processing++;
-      else if (s === "cancel") cancel++;
+      const rawStatus = String(r["Status"] ?? "").trim();
+      const sg = getStatusGroup(rawStatus);
+      if (sg === "complete") complete++;
+      else if (sg === "processing") processing++;
+      else if (sg === "cancel") cancel++;
 
       const rev = parseRevenue(r["Total Pay Display"]);
       revenue += rev;
@@ -128,6 +157,16 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
 
       const city = String(r["Pickup City"] ?? "").trim() || "Unknown";
       cityCount[city] = (cityCount[city] || 0) + 1;
+
+      // Group by date (Create Time)
+      const date = parseDate(r["Create Time"]);
+      if (date) {
+        if (!dailyCount[date]) dailyCount[date] = { complete: 0, processing: 0, cancel: 0, total: 0 };
+        dailyCount[date].total++;
+        if (sg === "complete") dailyCount[date].complete++;
+        else if (sg === "processing") dailyCount[date].processing++;
+        else if (sg === "cancel") dailyCount[date].cancel++;
+      }
     }
 
     const statusChart = [
@@ -148,7 +187,19 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
       .sort((a, b) => b[1] - a[1]).slice(0, 10)
       .map(([name, value]) => ({ name, value }));
 
-    return { total: rows.length, complete, processing, cancel, revenue, statusChart, topDepotCount, topCityCount, topDepotRevenue };
+    // Sort dates chronologically
+    const dateChart = Object.entries(dailyCount)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, v]) => ({
+        date: date.slice(5), // MM-DD for shorter label
+        fullDate: date,
+        complete: v.complete,
+        processing: v.processing,
+        cancel: v.cancel,
+        total: v.total,
+      }));
+
+    return { total: rows.length, complete, processing, cancel, revenue, statusChart, topDepotCount, topCityCount, topDepotRevenue, dateChart };
   }, [data]);
 
   const rows = (data?.rows as Row[]) ?? [];
@@ -219,6 +270,45 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
           </div>
         ))}
       </div>
+
+      {/* Orders by Date */}
+      {A.dateChart.length > 0 && (
+        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-white font-semibold">Orders theo ngày</h2>
+              <p className="text-slate-500 text-xs mt-0.5">{A.dateChart.length} ngày có dữ liệu</p>
+            </div>
+            <ScreenshotBtn targetRef={dateRef} />
+          </div>
+          <div ref={dateRef} className="bg-slate-900/50 p-4 rounded-xl">
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={A.dateChart} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  interval={A.dateChart.length > 30 ? Math.floor(A.dateChart.length / 15) : 0}
+                />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
+                <Tooltip
+                  {...ttStyle}
+                  labelFormatter={(l) => `Ngày: ${l}`}
+                  formatter={(v: number, name: string) => [fmtNum(v), name.charAt(0).toUpperCase() + name.slice(1)]}
+                />
+                <Line type="monotone" dataKey="complete" stroke="#10b981" strokeWidth={2} dot={false} name="complete" />
+                <Line type="monotone" dataKey="processing" stroke="#3b82f6" strokeWidth={2} dot={false} name="processing" />
+                <Line type="monotone" dataKey="cancel" stroke="#ef4444" strokeWidth={2} dot={false} name="cancel" />
+              </LineChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-6 mt-2">
+              <span className="text-slate-400 text-xs"><span className="text-green-400">■</span> Complete</span>
+              <span className="text-slate-400 text-xs"><span className="text-blue-400">■</span> Processing</span>
+              <span className="text-slate-400 text-xs"><span className="text-red-400">■</span> Cancel</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status Distribution */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
@@ -311,7 +401,7 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-900/60">
-                {["Order ID","Status","Depot","Total Pay Display","Pickup City"].map((h) => (
+                {["Order ID","Create Time","Status","Depot","Total Pay Display","Pickup City"].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-slate-400 font-medium text-xs uppercase tracking-wider whitespace-nowrap">
                     {h}
                   </th>
@@ -320,11 +410,12 @@ export default function Dashboard({ data, onImportNew, onClearData }: DashboardP
             </thead>
             <tbody>
               {pageRows.map((r, i) => {
-                const s = String(r["Status"] ?? "").trim().toLowerCase();
-                const statusColor = s === "complete" ? "text-green-400" : s === "processing" ? "text-blue-400" : "text-red-400";
+                const sg = getStatusGroup(String(r["Status"] ?? ""));
+                const statusColor = sg === "complete" ? "text-green-400" : sg === "processing" ? "text-blue-400" : "text-red-400";
                 return (
                   <tr key={i} className={`border-t border-slate-700/50 ${i % 2 === 0 ? "bg-slate-900/20" : ""}`}>
                     <td className="px-4 py-2.5 text-slate-300 font-mono text-xs">{String(r["Order ID"] ?? "")}</td>
+                    <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{String(r["Create Time"] ?? "")}</td>
                     <td className={`px-4 py-2.5 font-medium text-xs ${statusColor}`}>{String(r["Status"] ?? "")}</td>
                     <td className="px-4 py-2.5 text-slate-300 text-xs">{String(r["Depot"] ?? "")}</td>
                     <td className="px-4 py-2.5 text-amber-400 text-xs text-right">{String(r["Total Pay Display"] ?? "")}</td>
