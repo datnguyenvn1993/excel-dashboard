@@ -1,9 +1,23 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ParsedData } from "@/types/data";
+
+const COLUMNS = [
+  "Order ID",
+  "Sap ID",
+  "Create Date",
+  "Vehicle id",
+  "Total Pay",
+  "Status Order",
+  "City Depot",
+  "Driver Group ID",
+  "Distance",
+];
+const DATE_COL = "Create Date";
 
 interface FileUploadProps {
-  onUploadSuccess: () => void;
+  onUploadSuccess: (data: ParsedData) => void;
 }
 
 export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
@@ -12,61 +26,132 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const uploadFile = useCallback(async (file: File) => {
-    if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
-      setError("Please upload an Excel (.xlsx, .xls) or CSV file.");
-      return;
-    }
-    setIsUploading(true);
-    setError(null);
-    setSuccess(null);
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Upload failed");
-      } else {
-        setSuccess(`✓ Imported ${data.data.rowCount} rows from "${data.data.fileName}"`);
-        setTimeout(() => onUploadSuccess(), 1200);
+  const processFile = useCallback(
+    async (file: File) => {
+      if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+        setError("Please upload an Excel (.xlsx, .xls) or CSV file.");
+        return;
       }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setIsUploading(false);
-    }
-  }, [onUploadSuccess]);
+      setIsUploading(true);
+      setError(null);
+      setSuccess(null);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
-  }, [uploadFile]);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const XLSX = (await import("xlsx")) as any;
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+          sheet,
+          { raw: true, defval: "" }
+        );
+
+        if (rawRows.length === 0) {
+          setError("File không có dữ liệu.");
+          return;
+        }
+
+        const fileKeys = Object.keys(rawRows[0]);
+        const colMap: Record<string, string> = {};
+        for (const col of COLUMNS) {
+          const match = fileKeys.find(
+            (k) => k.trim().toLowerCase() === col.trim().toLowerCase()
+          );
+          if (match) colMap[col] = match;
+        }
+
+        const rows = rawRows.map((raw: Record<string, unknown>) => {
+          const row: Record<string, unknown> = {};
+          for (const [ourCol, fileCol] of Object.entries(colMap)) {
+            let val: unknown = raw[fileCol];
+            if (ourCol === DATE_COL) {
+              if (typeof val === "number") {
+                try {
+                  const info = XLSX.SSF.parse_date_code(val);
+                  if (info) {
+                    const d = new Date(
+                      info.y, info.m - 1, info.d,
+                      info.H || 0, info.M || 0, Math.floor(info.S || 0)
+                    );
+                    if (!isNaN(d.getTime())) val = d.toISOString();
+                  }
+                } catch { /* keep original */ }
+              } else if (typeof val === "string" && val.trim()) {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) val = d.toISOString();
+              }
+            }
+            row[ourCol] = val;
+          }
+          return row;
+        });
+
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        const now = new Date();
+        const parsed: ParsedData = {
+          id,
+          headers: Object.keys(colMap),
+          rows,
+          fileName: file.name,
+          uploadedAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + 10 * 86400000).toISOString(),
+          rowCount: rows.length,
+        };
+
+        try {
+          localStorage.setItem("excel-dashboard-data", JSON.stringify(parsed));
+        } catch {
+          console.warn("localStorage quota exceeded");
+        }
+
+        setSuccess(
+          `✓ Imported ${rows.length.toLocaleString()} rows from "${file.name}"`
+        );
+        setTimeout(() => onUploadSuccess(parsed), 800);
+      } catch (err) {
+        console.error("Parse error:", err);
+        setError("Không thể đọc file. Vui lòng kiểm tra lại file Excel.");
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [onUploadSuccess]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file);
+    },
+    [processFile]
+  );
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6">
       <div className="text-center">
         <h2 className="text-3xl font-bold text-white mb-2">Upload dữ liệu</h2>
-        <p className="text-slate-400">Import file Excel hoặc CSV — dữ liệu được lưu tối đa 10 ngày</p>
+        <p className="text-slate-400">
+          Import file Excel hoặc CSV — dữ liệu tự động lưu trên trình duyệt
+        </p>
       </div>
 
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer
-          ${isDragging ? "border-blue-400 bg-blue-500/10" : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"}`}
+        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer ${isDragging ? "border-blue-400 bg-blue-500/10" : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"}`}
         onClick={() => document.getElementById("file-input")?.click()}
       >
         <input id="file-input" type="file" accept=".xlsx,.xls,.csv" className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
 
         {isUploading ? (
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            <p className="text-slate-300">Đang xử lý và lưu file...</p>
+            <p className="text-slate-300">Đang xử lý file...</p>
           </div>
         ) : success ? (
           <div className="flex flex-col items-center gap-3">
