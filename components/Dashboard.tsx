@@ -1,120 +1,16 @@
 "use client";
-
-import { useMemo, useRef, useState } from "react";
+import { useState, useMemo } from "react";
+import { ParsedData } from "@/types/data";
 import {
-  BarChart,
-  Bar,
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
-  Cell,
 } from "recharts";
-import { ParsedData } from "@/types/data";
-import { Upload, Camera, Trash2 } from "lucide-react";
-
-type Row = Record<string, unknown>;
-
-function parseRevenue(val: unknown): number {
-  if (typeof val === "number") return val;
-  const s = String(val ?? "").replace(/[^\d.]/g, "");
-  return parseFloat(s) || 0;
-}
-
-function fmtNum(n: number) {
-  return n.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
-}
-
-function fmtRevenue(n: number) {
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
-  return n.toFixed(0);
-}
-
-// Parse "Create Time" → YYYY-MM-DD (handles ISO, DD/MM/YYYY, MM/DD/YYYY, etc.)
-function parseDate(val: unknown): string | null {
-  const s = String(val ?? "").trim();
-  if (!s) return null;
-  // Try native Date parse (ISO, RFC, etc.)
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  // Try DD/MM/YYYY or DD-MM-YYYY (Vietnamese format)
-  const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
-  if (m) {
-    const d2 = new Date(`${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`);
-    if (!isNaN(d2.getTime())) return d2.toISOString().slice(0, 10);
-  }
-  return null;
-}
-
-function getStatusGroup(raw: string): "complete" | "processing" | "cancel" | "other" {
-  const s = raw.trim().toLowerCase();
-  if (s.startsWith("complete")) return "complete";
-  if (s.startsWith("process") || s === "in progress" || s === "inprogress") return "processing";
-  if (s.startsWith("cancel")) return "cancel";
-  return "other";
-}
-
-async function captureToClipboard(el: HTMLElement): Promise<void> {
-  const w = window as unknown as Record<string, unknown>;
-  if (!w.html2canvas) {
-    await new Promise<void>((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-      s.onload = () => resolve();
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-  type H2C = (el: HTMLElement, opts: object) => Promise<HTMLCanvasElement>;
-  const h2c = w.html2canvas as H2C;
-  const canvas = await h2c(el, { scale: 2, useCORS: true, backgroundColor: "#0f172a" });
-  await new Promise<void>((resolve) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) { resolve(); return; }
-      try {
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      } catch {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "chart.png"; a.click();
-        URL.revokeObjectURL(url);
-      }
-      resolve();
-    }, "image/png");
-  });
-}
-
-function ScreenshotBtn({ targetRef }: { targetRef: { current: HTMLDivElement | null } }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={async () => {
-        if (!targetRef.current) return;
-        await captureToClipboard(targetRef.current);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }}
-      title="Chup hinh & copy vao clipboard"
-      className="flex items-center gap-1 text-xs text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 px-2 py-1 rounded transition-colors"
-    >
-      <Camera className="w-3.5 h-3.5" />
-      {copied ? "Da copy!" : "Chup hinh"}
-    </button>
-  );
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  complete: "#10b981",
-  processing: "#3b82f6",
-  cancel: "#ef4444",
-};
-
-const BAR_COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316","#84cc16","#06b6d4","#ef4444"];
 
 interface DashboardProps {
   data: ParsedData | null;
@@ -122,327 +18,508 @@ interface DashboardProps {
   onClearData: () => void;
 }
 
-export default function Dashboard({ data, onImportNew, onClearData }: DashboardProps) {
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 50;
-  const kpiRef = useRef<HTMLDivElement>(null);
-  const statusRef = useRef<HTMLDivElement>(null);
-  const depotRef = useRef<HTMLDivElement>(null);
-  const cityRef = useRef<HTMLDivElement>(null);
-  const dateRef = useRef<HTMLDivElement>(null);
-  const tableRef = useRef<HTMLDivElement>(null);
+type Row = Record<string, unknown>;
 
-  const A = useMemo(() => {
-    if (!data || data.rowCount === 0) return null;
-    const rows = data.rows as Row[];
-    let complete = 0, processing = 0, cancel = 0, revenue = 0;
-    const depotCount: Record<string, number> = {};
-    const depotRevenue: Record<string, number> = {};
-    const cityCount: Record<string, number> = {};
-    const dailyCount: Record<string, { complete: number; processing: number; cancel: number; total: number }> = {};
+function parseDate(val: unknown): string | null {
+  const s = String(val ?? "").trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (m) {
+    const d2 = new Date(
+      `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`
+    );
+    if (!isNaN(d2.getTime())) return d2.toISOString().slice(0, 10);
+  }
+  return null;
+}
 
-    for (const r of rows) {
-      const rawStatus = String(r["Status"] ?? "").trim();
-      const sg = getStatusGroup(rawStatus);
-      if (sg === "complete") complete++;
-      else if (sg === "processing") processing++;
-      else if (sg === "cancel") cancel++;
+function parseHour(val: unknown): number | null {
+  const s = String(val ?? "").trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.getHours();
+  const m = s.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s+(\d{1,2}):\d{2}/);
+  if (m) return parseInt(m[1]);
+  return null;
+}
 
-      const rev = parseRevenue(r["Total Pay Display"]);
-      revenue += rev;
+function getStatusGroup(
+  raw: string
+): "complete" | "processing" | "cancel" | "other" {
+  const s = raw.trim().toLowerCase();
+  if (s.startsWith("complete")) return "complete";
+  if (s.startsWith("process") || s === "in progress" || s === "inprogress")
+    return "processing";
+  if (s.startsWith("cancel")) return "cancel";
+  return "other";
+}
 
-      const depot = String(r["Depot"] ?? "").trim() || "Unknown";
-      depotCount[depot] = (depotCount[depot] || 0) + 1;
-      depotRevenue[depot] = (depotRevenue[depot] || 0) + rev;
+function formatGMV(val: number): string {
+  if (val >= 1_000_000_000) return (val / 1_000_000_000).toFixed(2) + " Tỉ";
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + " Tr";
+  if (val >= 1_000) return (val / 1_000).toFixed(1) + " K";
+  return val.toFixed(0);
+}
 
-      const city = String(r["Pickup City"] ?? "").trim() || "Unknown";
-      cityCount[city] = (cityCount[city] || 0) + 1;
+function fmt(n: number): string {
+  return n.toLocaleString("vi-VN");
+}
 
-      // Group by date (Create Time)
-      const date = parseDate(r["Create Time"]);
-      if (date) {
-        if (!dailyCount[date]) dailyCount[date] = { complete: 0, processing: 0, cancel: 0, total: 0 };
-        dailyCount[date].total++;
-        if (sg === "complete") dailyCount[date].complete++;
-        else if (sg === "processing") dailyCount[date].processing++;
-        else if (sg === "cancel") dailyCount[date].cancel++;
-      }
+type KPIResult = {
+  gmv: number;
+  total: number;
+  complete: number;
+  cancel: number;
+  processing: number;
+  pctComplete: number;
+  pctCancel: number;
+  aov: number;
+};
+
+function computeKPIs(rows: Row[]): KPIResult {
+  let gmv = 0,
+    complete = 0,
+    cancel = 0,
+    processing = 0;
+  for (const r of rows) {
+    const payStr = String(r["Total Pay Display"] ?? "").replace(/[^0-9.]/g, "");
+    const pay = parseFloat(payStr);
+    if (!isNaN(pay)) gmv += pay;
+    const sg = getStatusGroup(String(r["Status"] ?? ""));
+    if (sg === "complete") complete++;
+    else if (sg === "cancel") cancel++;
+    else if (sg === "processing") processing++;
+  }
+  const total = rows.length;
+  const pctComplete = total ? (complete / total) * 100 : 0;
+  const pctCancel = total ? (cancel / total) * 100 : 0;
+  const aov = total ? gmv / total : 0;
+  return {
+    gmv,
+    total,
+    complete,
+    cancel,
+    processing,
+    pctComplete,
+    pctCancel,
+    aov,
+  };
+}
+
+const COLOR_MAP: Record<string, { text: string; border: string }> = {
+  blue: { text: "text-blue-600", border: "border-l-blue-500" },
+  green: { text: "text-green-600", border: "border-l-green-500" },
+  red: { text: "text-red-500", border: "border-l-red-400" },
+  orange: { text: "text-orange-500", border: "border-l-orange-400" },
+  purple: { text: "text-purple-600", border: "border-l-purple-500" },
+  gray: { text: "text-gray-700", border: "border-l-gray-400" },
+};
+
+function KPICard({
+  label,
+  value,
+  color = "blue",
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  const c = COLOR_MAP[color] ?? COLOR_MAP.blue;
+  return (
+    <div
+      className={`bg-white rounded-lg border border-gray-100 border-l-4 ${c.border} p-3 shadow-sm min-w-0`}
+    >
+      <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-1 truncate">
+        {label}
+      </div>
+      <div className={`text-base font-bold ${c.text} truncate`}>{value}</div>
+    </div>
+  );
+}
+
+function KPIRow({ kpi }: { kpi: KPIResult }) {
+  const cards = [
+    { label: "GMV", value: formatGMV(kpi.gmv), color: "blue" },
+    { label: "Tổng đơn", value: fmt(kpi.total), color: "gray" },
+    { label: "% Hoàn thành", value: kpi.pctComplete.toFixed(1) + "%", color: "green" },
+    { label: "AOV", value: fmt(Math.round(kpi.aov)), color: "purple" },
+    { label: "Đơn hủy", value: fmt(kpi.cancel), color: "red" },
+    { label: "% Hủy", value: kpi.pctCancel.toFixed(1) + "%", color: "orange" },
+    { label: "Processing", value: fmt(kpi.processing), color: "blue" },
+  ];
+  return (
+    <div className="grid grid-cols-7 gap-2">
+      {cards.map((c) => (
+        <KPICard key={c.label} label={c.label} value={c.value} color={c.color} />
+      ))}
+    </div>
+  );
+}
+
+export default function Dashboard({
+  data,
+  onImportNew,
+  onClearData,
+}: DashboardProps) {
+  const [activeTab, setActiveTab] = useState<"kpi" | "charts" | "table">("kpi");
+
+  const computed = useMemo(() => {
+    const empty = {
+      filteredRows: [] as Row[],
+      depots: [] as string[],
+      depotRows: {} as Record<string, Row[]>,
+      nationalKPI: computeKPIs([]),
+      depotKPIs: {} as Record<string, KPIResult>,
+      todayDate: "",
+      d7Date: "",
+      hourlyData: [] as { hour: string; today: number; d7: number }[],
+      dailyData: [] as {
+        date: string;
+        complete: number;
+        processing: number;
+        cancel: number;
+      }[],
+    };
+
+    if (!data?.rows.length) return empty;
+
+    const rows = data.rows;
+
+    const dates = rows
+      .map((r) => parseDate(r["Create Time"]))
+      .filter(Boolean) as string[];
+
+    let filteredRows = rows;
+    let maxDate = "";
+    let d7Date = "";
+
+    if (dates.length) {
+      dates.sort();
+      maxDate = dates[dates.length - 1];
+      const maxDateObj = new Date(maxDate + "T00:00:00");
+
+      const d10 = new Date(maxDateObj);
+      d10.setDate(d10.getDate() - 10);
+      const d10Str = d10.toISOString().slice(0, 10);
+      filteredRows = rows.filter((r) => {
+        const d = parseDate(r["Create Time"]);
+        return d && d >= d10Str;
+      });
+
+      const d7 = new Date(maxDateObj);
+      d7.setDate(d7.getDate() - 7);
+      d7Date = d7.toISOString().slice(0, 10);
     }
 
-    const statusChart = [
-      { name: "Complete", value: complete, pct: rows.length > 0 ? ((complete / rows.length) * 100).toFixed(1) : "0" },
-      { name: "Processing", value: processing, pct: rows.length > 0 ? ((processing / rows.length) * 100).toFixed(1) : "0" },
-      { name: "Cancel", value: cancel, pct: rows.length > 0 ? ((cancel / rows.length) * 100).toFixed(1) : "0" },
-    ];
+    const depotSet = new Set<string>();
+    for (const r of filteredRows) {
+      const depot = String(r["Depot"] ?? "").trim();
+      if (depot) depotSet.add(depot);
+    }
+    const depots = [...depotSet].sort();
 
-    const topDepotCount = Object.entries(depotCount)
-      .sort((a, b) => b[1] - a[1]).slice(0, 10)
-      .map(([name, value]) => ({ name, value }));
+    const depotRows: Record<string, Row[]> = {};
+    for (const depot of depots) {
+      depotRows[depot] = filteredRows.filter(
+        (r) => String(r["Depot"] ?? "").trim() === depot
+      );
+    }
 
-    const topCityCount = Object.entries(cityCount)
-      .sort((a, b) => b[1] - a[1]).slice(0, 10)
-      .map(([name, value]) => ({ name, value }));
+    const nationalKPI = computeKPIs(filteredRows);
+    const depotKPIs: Record<string, KPIResult> = {};
+    for (const depot of depots) {
+      depotKPIs[depot] = computeKPIs(depotRows[depot]);
+    }
 
-    const topDepotRevenue = Object.entries(depotRevenue)
-      .sort((a, b) => b[1] - a[1]).slice(0, 10)
-      .map(([name, value]) => ({ name, value }));
+    const todayHourlyGMV: number[] = new Array(24).fill(0);
+    const d7HourlyGMV: number[] = new Array(24).fill(0);
 
-    // Sort dates chronologically
-    const dateChart = Object.entries(dailyCount)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, v]) => ({
-        date: date.slice(5), // MM-DD for shorter label
-        fullDate: date,
-        complete: v.complete,
-        processing: v.processing,
-        cancel: v.cancel,
-        total: v.total,
-      }));
+    for (const r of filteredRows) {
+      const d = parseDate(r["Create Time"]);
+      const h = parseHour(r["Create Time"]);
+      if (h === null || h < 0 || h > 23) continue;
+      const payStr = String(r["Total Pay Display"] ?? "").replace(/[^0-9.]/g, "");
+      const pay = parseFloat(payStr) || 0;
+      if (d === maxDate) todayHourlyGMV[h] += pay;
+      if (d === d7Date) d7HourlyGMV[h] += pay;
+    }
 
-    return { total: rows.length, complete, processing, cancel, revenue, statusChart, topDepotCount, topCityCount, topDepotRevenue, dateChart };
+    const hourlyData = Array.from({ length: 24 }, (_, h) => ({
+      hour: `${String(h).padStart(2, "0")}h`,
+      today: Math.round(todayHourlyGMV[h] / 1_000_000),
+      d7: Math.round(d7HourlyGMV[h] / 1_000_000),
+    }));
+
+    const dailyMap: Record<
+      string,
+      { complete: number; processing: number; cancel: number }
+    > = {};
+    for (const r of filteredRows) {
+      const d = parseDate(r["Create Time"]);
+      if (!d) continue;
+      if (!dailyMap[d]) dailyMap[d] = { complete: 0, processing: 0, cancel: 0 };
+      const sg = getStatusGroup(String(r["Status"] ?? ""));
+      if (sg === "complete") dailyMap[d].complete++;
+      else if (sg === "processing") dailyMap[d].processing++;
+      else if (sg === "cancel") dailyMap[d].cancel++;
+    }
+    const dailyData = Object.entries(dailyMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, counts]) => ({ date: date.slice(5), ...counts }));
+
+    return {
+      filteredRows,
+      depots,
+      depotRows,
+      nationalKPI,
+      depotKPIs,
+      todayDate: maxDate,
+      d7Date,
+      hourlyData,
+      dailyData,
+    };
   }, [data]);
 
-  const rows = (data?.rows as Row[]) ?? [];
-  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+  const {
+    filteredRows,
+    depots,
+    depotRows,
+    nationalKPI,
+    depotKPIs,
+    todayDate,
+    d7Date,
+    hourlyData,
+    dailyData,
+  } = computed;
 
-  const ttStyle = { contentStyle: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8 } };
-
-  // Empty state
-  if (!data || !A) {
+  if (!data) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-          {["Total Orders","Complete","Processing","Cancel","Total Revenue"].map((label) => (
-            <div key={label} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-center">
-              <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">{label}</p>
-              <p className="text-2xl font-bold text-slate-600">--</p>
-            </div>
-          ))}
-        </div>
-        <div className="bg-slate-800/30 border border-dashed border-slate-700 rounded-2xl p-16 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-800 flex items-center justify-center">
-            <Upload className="w-8 h-8 text-slate-600" />
-          </div>
-          <p className="text-slate-400 text-lg font-medium mb-2">Chưa có dữ liệu</p>
-          <p className="text-slate-500 text-sm mb-6">Import file Excel để xem dashboard</p>
-          <button
-            onClick={onImportNew}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 rounded-lg transition-colors"
-          >
-            Import file ngay
-          </button>
-        </div>
+      <div className="flex flex-col items-center justify-center h-64 gap-4 text-gray-500">
+        <p>Chưa có dữ liệu. Vui lòng upload file Excel.</p>
+        <button
+          onClick={onImportNew}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+        >
+          Upload File
+        </button>
       </div>
     );
   }
 
+  const todayLabel = todayDate
+    ? new Date(todayDate + "T00:00:00").toLocaleDateString("vi-VN")
+    : "";
+  const todayShort = todayDate ? todayDate.slice(5).replace("-", "/") : "—";
+  const d7Short = d7Date ? d7Date.slice(5).replace("-", "/") : "—";
+
   return (
-    <div className="space-y-6">
-      {/* File info bar */}
-      <div className="flex items-center gap-3 bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-medium truncate">{data.fileName}</p>
-          <p className="text-slate-400 text-xs">
-            {data.rowCount.toLocaleString()} rows · Upload: {new Date(data.uploadedAt).toLocaleString("vi-VN")}
-          </p>
-        </div>
-        <button
-          onClick={onClearData}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/40 px-3 py-1.5 rounded-lg transition-colors"
-        >
-          <Trash2 className="w-3.5 h-3.5" /> Xóa data
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div ref={kpiRef} className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-        {[
-          { label: "Total Orders", val: fmtNum(A.total), color: "text-white" },
-          { label: "Complete", val: fmtNum(A.complete), color: "text-green-400" },
-          { label: "Processing", val: fmtNum(A.processing), color: "text-blue-400" },
-          { label: "Cancel", val: fmtNum(A.cancel), color: "text-red-400" },
-          { label: "Total Revenue", val: fmtRevenue(A.revenue), color: "text-amber-400" },
-        ].map((k) => (
-          <div key={k.label} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-center">
-            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">{k.label}</p>
-            <p className={`text-2xl font-bold ${k.color}`}>{k.val}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Orders by Date */}
-      {A.dateChart.length > 0 && (
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-white font-semibold">Orders theo ngày</h2>
-              <p className="text-slate-500 text-xs mt-0.5">{A.dateChart.length} ngày có dữ liệu</p>
-            </div>
-            <ScreenshotBtn targetRef={dateRef} />
-          </div>
-          <div ref={dateRef} className="bg-slate-900/50 p-4 rounded-xl">
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={A.dateChart} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fill: "#94a3b8", fontSize: 10 }}
-                  interval={A.dateChart.length > 30 ? Math.floor(A.dateChart.length / 15) : 0}
-                />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
-                <Tooltip
-                  {...ttStyle}
-                  labelFormatter={(l) => `Ngày: ${l}`}
-                  formatter={(v: number, name: string) => [fmtNum(v), name.charAt(0).toUpperCase() + name.slice(1)]}
-                />
-                <Line type="monotone" dataKey="complete" stroke="#10b981" strokeWidth={2} dot={false} name="complete" />
-                <Line type="monotone" dataKey="processing" stroke="#3b82f6" strokeWidth={2} dot={false} name="processing" />
-                <Line type="monotone" dataKey="cancel" stroke="#ef4444" strokeWidth={2} dot={false} name="cancel" />
-              </LineChart>
-            </ResponsiveContainer>
-            <div className="flex justify-center gap-6 mt-2">
-              <span className="text-slate-400 text-xs"><span className="text-green-400">■</span> Complete</span>
-              <span className="text-slate-400 text-xs"><span className="text-blue-400">■</span> Processing</span>
-              <span className="text-slate-400 text-xs"><span className="text-red-400">■</span> Cancel</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Status Distribution */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">Phân bổ Status</h2>
-          <ScreenshotBtn targetRef={statusRef} />
-        </div>
-        <div ref={statusRef} className="bg-slate-900/50 p-4 rounded-xl">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={A.statusChart} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-              <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
-              <Tooltip {...ttStyle} formatter={(v: number) => [fmtNum(v), "Orders"]} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {A.statusChart.map((entry) => (
-                  <Cell key={entry.name} fill={STATUS_COLORS[entry.name.toLowerCase()] ?? "#94a3b8"} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-6 mt-2">
-            {A.statusChart.map((s) => (
-              <span key={s.name} className="text-slate-400 text-xs">
-                <span style={{ color: STATUS_COLORS[s.name.toLowerCase()] }}>■</span> {s.name}: {s.pct}%
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Top Depot by Orders */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">Top 10 Depot theo Orders</h2>
-          <ScreenshotBtn targetRef={depotRef} />
-        </div>
-        <div ref={depotRef} className="bg-slate-900/50 p-4 rounded-xl">
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={A.topDepotCount} layout="vertical" margin={{ top: 5, right: 40, left: 80, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
-              <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} width={75} />
-              <Tooltip {...ttStyle} formatter={(v: number) => [fmtNum(v), "Orders"]} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {A.topDepotCount.map((_, i) => (
-                  <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Top Pickup City */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">Top 10 Pickup City theo Orders</h2>
-          <ScreenshotBtn targetRef={cityRef} />
-        </div>
-        <div ref={cityRef} className="bg-slate-900/50 p-4 rounded-xl">
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={A.topCityCount} layout="vertical" margin={{ top: 5, right: 40, left: 80, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
-              <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} width={75} />
-              <Tooltip {...ttStyle} formatter={(v: number) => [fmtNum(v), "Orders"]} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {A.topCityCount.map((_, i) => (
-                  <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Data Table */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700">
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-white font-semibold">Chi tiết đơn hàng</h2>
-            <p className="text-slate-400 text-xs">
-              Hiển thị {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, rows.length)} / {fmtNum(rows.length)} rows
+            <h1 className="text-base font-bold uppercase text-gray-800 tracking-wide flex items-center gap-2 flex-wrap">
+              📊 BÁO CÁO VẬN HÀNH PLATFORM
+              {todayDate && (
+                <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-sm font-semibold normal-case">
+                  Đến ngày {todayLabel}
+                </span>
+              )}
+            </h1>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {filteredRows.length.toLocaleString()} đơn (10 ngày gần nhất) ·{" "}
+              {data.fileName}
             </p>
           </div>
-          <ScreenshotBtn targetRef={tableRef} />
+          <div className="flex gap-2">
+            <button
+              onClick={onImportNew}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+            >
+              📤 Import mới
+            </button>
+            <button
+              onClick={onClearData}
+              className="px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+            >
+              🗑 Xóa data
+            </button>
+          </div>
         </div>
-        <div ref={tableRef} className="overflow-x-auto bg-slate-900/30">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-900/60">
-                {["Order ID","Create Time","Status","Depot","Total Pay Display","Pickup City"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-slate-400 font-medium text-xs uppercase tracking-wider whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((r, i) => {
-                const sg = getStatusGroup(String(r["Status"] ?? ""));
-                const statusColor = sg === "complete" ? "text-green-400" : sg === "processing" ? "text-blue-400" : "text-red-400";
-                return (
-                  <tr key={i} className={`border-t border-slate-700/50 ${i % 2 === 0 ? "bg-slate-900/20" : ""}`}>
-                    <td className="px-4 py-2.5 text-slate-300 font-mono text-xs">{String(r["Order ID"] ?? "")}</td>
-                    <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{String(r["Create Time"] ?? "")}</td>
-                    <td className={`px-4 py-2.5 font-medium text-xs ${statusColor}`}>{String(r["Status"] ?? "")}</td>
-                    <td className="px-4 py-2.5 text-slate-300 text-xs">{String(r["Depot"] ?? "")}</td>
-                    <td className="px-4 py-2.5 text-amber-400 text-xs text-right">{String(r["Total Pay Display"] ?? "")}</td>
-                    <td className="px-4 py-2.5 text-slate-300 text-xs">{String(r["Pickup City"] ?? "")}</td>
+      </div>
+
+      <div className="bg-white border-b border-gray-200 px-6">
+        <div className="flex">
+          {(
+            [
+              ["kpi", "📋 KPI Overview"],
+              ["charts", "📈 Charts"],
+              ["table", "📄 Dữ liệu"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === key
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-6">
+        {activeTab === "kpi" && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🌐</span>
+                <h2 className="font-bold text-sm uppercase text-gray-700 tracking-wide">
+                  Toàn Quốc
+                </h2>
+                <span className="text-xs text-gray-400">
+                  ({filteredRows.length.toLocaleString()} đơn)
+                </span>
+              </div>
+              <KPIRow kpi={nationalKPI} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {depots.map((depot) => (
+                <div
+                  key={depot}
+                  className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-base">🏢</span>
+                    <h3 className="font-bold text-xs uppercase text-gray-600 tracking-wide">
+                      {depot}
+                    </h3>
+                    <span className="text-xs text-gray-400">
+                      ({depotKPIs[depot].total.toLocaleString()} đơn)
+                    </span>
+                  </div>
+                  <KPIRow kpi={depotKPIs[depot]} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "charts" && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+              <h3 className="font-semibold text-sm text-gray-700 mb-1">
+                📈 GMV theo giờ —{" "}
+                <span className="text-blue-600">Hôm nay ({todayShort})</span>{" "}
+                vs{" "}
+                <span className="text-gray-400">D-7 ({d7Short})</span>
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">Đơn vị: Triệu VNĐ</p>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart
+                  data={hourlyData}
+                  margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} width={50} />
+                  <Tooltip
+                    formatter={(v: number, name: string) => [`${v} Tr`, name]}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line
+                    type="monotone"
+                    dataKey="today"
+                    name={`Hôm nay (${todayShort})`}
+                    stroke="#3b82f6"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, fill: "#3b82f6" }}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="d7"
+                    name={`D-7 (${d7Short})`}
+                    stroke="#9ca3af"
+                    strokeWidth={2}
+                    strokeDasharray="6 3"
+                    dot={{ r: 2, fill: "#9ca3af" }}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+              <h3 className="font-semibold text-sm text-gray-700 mb-4">
+                📅 Số đơn theo ngày (10 ngày gần nhất)
+              </h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart
+                  data={dailyData}
+                  margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} width={50} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "table" && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
+              Hiển thị {Math.min(500, filteredRows.length).toLocaleString()}/
+              {filteredRows.length.toLocaleString()} dòng
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    {["Order ID", "Create Time", "Status", "Depot", "Total Pay Display", "Pickup City"].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left font-semibold text-xs text-gray-600 whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="text-sm text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 transition-colors"
-            >
-              ← Trước
-            </button>
-            <span className="text-slate-400 text-sm">Trang {page + 1} / {totalPages}</span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page === totalPages - 1}
-              className="text-sm text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 transition-colors"
-            >
-              Sau →
-            </button>
+                </thead>
+                <tbody>
+                  {filteredRows.slice(0, 500).map((row, i) => {
+                    const sg = getStatusGroup(String(row["Status"] ?? ""));
+                    const statusColors: Record<string, string> = {
+                      complete: "bg-emerald-50 text-emerald-700",
+                      processing: "bg-blue-50 text-blue-700",
+                      cancel: "bg-red-50 text-red-600",
+                      other: "bg-gray-50 text-gray-600",
+                    };
+                    return (
+                      <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}>
+                        <td className="px-3 py-1.5 font-mono text-xs text-gray-500">{String(row["Order ID"] ?? "")}</td>
+                        <td className="px-3 py-1.5 text-xs text-gray-400 whitespace-nowrap">{String(row["Create Time"] ?? "")}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[sg]}`}>{String(row["Status"] ?? "")}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-gray-700">{String(row["Depot"] ?? "")}</td>
+                        <td className="px-3 py-1.5 text-xs font-medium text-right text-gray-700">{String(row["Total Pay Display"] ?? "")}</td>
+                        <td className="px-3 py-1.5 text-xs text-gray-500">{String(row["Pickup City"] ?? "")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
