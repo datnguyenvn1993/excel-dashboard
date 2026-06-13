@@ -2,60 +2,31 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
+  Cell,
 } from "recharts";
-import { ParsedData, DatasetMeta } from "@/types/data";
-import { Clock, Trash2, Upload, Camera } from "lucide-react";
+import { ParsedData } from "@/types/data";
+import { Upload, Camera, Trash2 } from "lucide-react";
 
 type Row = Record<string, unknown>;
 
-const COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#84cc16",
-  "#06b6d4",
-];
-
-interface DashboardProps {
-  data: ParsedData;
-  datasets: DatasetMeta[];
-  onSelectDataset: (meta: DatasetMeta) => void;
-  onDeleteDataset: (id: string) => void;
-  onImportNew: () => void;
-}
-
-function daysLeft(exp: string) {
-  return Math.ceil((new Date(exp).getTime() - Date.now()) / 86400000);
-}
-
-function parseDate(val: unknown): Date | null {
-  if (val === null || val === undefined || val === "") return null;
-  const d = new Date(val as string);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function toDateStr(d: Date) {
-  return d.toISOString().split("T")[0];
+function parseRevenue(val: unknown): number {
+  if (typeof val === "number") return val;
+  const s = String(val ?? "").replace(/[^\d.]/g, "");
+  return parseFloat(s) || 0;
 }
 
 function fmtNum(n: number) {
   return n.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
 }
 
-function fmtGMV(n: number) {
+function fmtRevenue(n: number) {
   if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
@@ -67,8 +38,7 @@ async function captureToClipboard(el: HTMLElement): Promise<void> {
   if (!w.html2canvas) {
     await new Promise<void>((resolve, reject) => {
       const s = document.createElement("script");
-      s.src =
-        "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
       s.onload = () => resolve();
       s.onerror = reject;
       document.head.appendChild(s);
@@ -76,27 +46,16 @@ async function captureToClipboard(el: HTMLElement): Promise<void> {
   }
   type H2C = (el: HTMLElement, opts: object) => Promise<HTMLCanvasElement>;
   const h2c = w.html2canvas as H2C;
-  const canvas = await h2c(el, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#0f172a",
-  });
+  const canvas = await h2c(el, { scale: 2, useCORS: true, backgroundColor: "#0f172a" });
   await new Promise<void>((resolve) => {
     canvas.toBlob(async (blob) => {
-      if (!blob) {
-        resolve();
-        return;
-      }
+      if (!blob) { resolve(); return; }
       try {
-        await navigator.clipboard.write([
-          new ClipboardItem({ "image/png": blob }),
-        ]);
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       } catch {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = "chart.png";
-        a.click();
+        a.href = url; a.download = "chart.png"; a.click();
         URL.revokeObjectURL(url);
       }
       resolve();
@@ -104,11 +63,7 @@ async function captureToClipboard(el: HTMLElement): Promise<void> {
   });
 }
 
-function ScreenshotBtn({
-  targetRef,
-}: {
-  targetRef: { current: HTMLDivElement | null };
-}) {
+function ScreenshotBtn({ targetRef }: { targetRef: { current: HTMLDivElement | null } }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -127,520 +82,278 @@ function ScreenshotBtn({
   );
 }
 
-export default function Dashboard({
-  data,
-  datasets,
-  onSelectDataset,
-  onDeleteDataset,
-  onImportNew,
-}: DashboardProps) {
-  const { rows, fileName, rowCount, expiresAt, id } = data;
+const STATUS_COLORS: Record<string, string> = {
+  complete: "#10b981",
+  processing: "#3b82f6",
+  cancel: "#ef4444",
+};
+
+const BAR_COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316","#84cc16","#06b6d4","#ef4444"];
+
+interface DashboardProps {
+  data: ParsedData | null;
+  onImportNew: () => void;
+  onClearData: () => void;
+}
+
+export default function Dashboard({ data, onImportNew, onClearData }: DashboardProps) {
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+  const kpiRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const depotRef = useRef<HTMLDivElement>(null);
+  const cityRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const A = useMemo(() => {
-    const complete = (rows as Row[]).filter(
-      (r) =>
-        String(r["Status Order"] ?? "")
-          .trim()
-          .toLowerCase() === "complete"
-    );
+    if (!data || data.rowCount === 0) return null;
+    const rows = data.rows as Row[];
+    let complete = 0, processing = 0, cancel = 0, revenue = 0;
+    const depotCount: Record<string, number> = {};
+    const depotRevenue: Record<string, number> = {};
+    const cityCount: Record<string, number> = {};
 
-    const gmv = complete.reduce((s, r) => s + (Number(r["Total Pay"]) || 0), 0);
-    const driverSet = new Set(
-      complete.filter((r) => r["Sap ID"]).map((r) => r["Sap ID"])
-    );
-    const driverActive = driverSet.size;
-    const totalTrip = complete.length;
-    const tpd = driverActive > 0 ? totalTrip / driverActive : 0;
+    for (const r of rows) {
+      const s = String(r["Status"] ?? "").trim().toLowerCase();
+      if (s === "complete") complete++;
+      else if (s === "processing") processing++;
+      else if (s === "cancel") cancel++;
 
-    // Find date range
-    const allDates = (rows as Row[])
-      .map((r) => parseDate(r["Create Date"]))
-      .filter((d): d is Date => d !== null);
-    const maxDate =
-      allDates.length > 0
-        ? new Date(Math.max(...allDates.map((d) => d.getTime())))
-        : new Date();
-    const wowDate = new Date(maxDate);
-    wowDate.setDate(maxDate.getDate() - 7);
-    const todayStr = toDateStr(maxDate);
-    const wowStr = toDateStr(wowDate);
+      const rev = parseRevenue(r["Total Pay Display"]);
+      revenue += rev;
 
-    const HOURS = Array.from({ length: 24 }, (_, h) => `${h}:00`);
-    const todayGMV = new Array(24).fill(0);
-    const wowGMV = new Array(24).fill(0);
-    const todayDrv: Set<unknown>[] = Array.from({ length: 24 }, () => new Set());
-    const wowDrv: Set<unknown>[] = Array.from({ length: 24 }, () => new Set());
+      const depot = String(r["Depot"] ?? "").trim() || "Unknown";
+      depotCount[depot] = (depotCount[depot] || 0) + 1;
+      depotRevenue[depot] = (depotRevenue[depot] || 0) + rev;
 
-    complete.forEach((r) => {
-      const d = parseDate(r["Create Date"]);
-      if (!d) return;
-      const ds = toDateStr(d);
-      const h = d.getHours();
-      const pay = Number(r["Total Pay"]) || 0;
-      if (ds === todayStr) {
-        todayGMV[h] += pay;
-        if (r["Sap ID"]) todayDrv[h].add(r["Sap ID"]);
-      } else if (ds === wowStr) {
-        wowGMV[h] += pay;
-        if (r["Sap ID"]) wowDrv[h].add(r["Sap ID"]);
-      }
-    });
+      const city = String(r["Pickup City"] ?? "").trim() || "Unknown";
+      cityCount[city] = (cityCount[city] || 0) + 1;
+    }
 
-    const gmvChart = HOURS.map((hour, h) => ({
-      hour,
-      today: todayGMV[h],
-      wow: wowGMV[h],
-    }));
-    const drvChart = HOURS.map((hour, h) => ({
-      hour,
-      today: todayDrv[h].size,
-      wow: wowDrv[h].size,
-    }));
+    const statusChart = [
+      { name: "Complete", value: complete, pct: rows.length > 0 ? ((complete / rows.length) * 100).toFixed(1) : "0" },
+      { name: "Processing", value: processing, pct: rows.length > 0 ? ((processing / rows.length) * 100).toFixed(1) : "0" },
+      { name: "Cancel", value: cancel, pct: rows.length > 0 ? ((cancel / rows.length) * 100).toFixed(1) : "0" },
+    ];
 
-    // Group chart: today only, by hour
-    const groupHours: Record<string, number[]> = {};
-    complete.forEach((r) => {
-      const d = parseDate(r["Create Date"]);
-      if (!d || toDateStr(d) !== todayStr) return;
-      const g = String(r["Driver Group ID"] ?? "Unknown");
-      if (!groupHours[g]) groupHours[g] = new Array(24).fill(0);
-      groupHours[g][d.getHours()] += Number(r["Total Pay"]) || 0;
-    });
-    const groups = Object.keys(groupHours).sort();
-    const groupChart = HOURS.map((hour, h) => {
-      const pt: Record<string, unknown> = { hour };
-      groups.forEach((g) => {
-        pt[g] = groupHours[g]?.[h] || 0;
-      });
-      return pt;
-    });
+    const topDepotCount = Object.entries(depotCount)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, value]) => ({ name, value }));
 
-    // Group table: all complete data
-    const groupSummary: Record<
-      string,
-      { gmv: number; drv: Set<unknown>; trips: number }
-    > = {};
-    complete.forEach((r) => {
-      const g = String(r["Driver Group ID"] ?? "Unknown");
-      if (!groupSummary[g])
-        groupSummary[g] = { gmv: 0, drv: new Set(), trips: 0 };
-      groupSummary[g].gmv += Number(r["Total Pay"]) || 0;
-      if (r["Sap ID"]) groupSummary[g].drv.add(r["Sap ID"]);
-      groupSummary[g].trips++;
-    });
-    const groupTable = Object.entries(groupSummary)
-      .map(([g, s]) => ({
-        g,
-        gmv: s.gmv,
-        drv: s.drv.size,
-        trips: s.trips,
-        tpd: s.drv.size > 0 ? s.trips / s.drv.size : 0,
-      }))
-      .sort((a, b) => b.gmv - a.gmv);
+    const topCityCount = Object.entries(cityCount)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, value]) => ({ name, value }));
 
-    return {
-      gmv,
-      driverActive,
-      totalTrip,
-      tpd,
-      todayStr,
-      wowStr,
-      gmvChart,
-      drvChart,
-      groups,
-      groupChart,
-      groupTable,
-    };
-  }, [rows]);
+    const topDepotRevenue = Object.entries(depotRevenue)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, value]) => ({ name, value }));
 
-  const kpiRef = useRef<HTMLDivElement>(null);
-  const gmvChartRef = useRef<HTMLDivElement>(null);
-  const drvChartRef = useRef<HTMLDivElement>(null);
-  const grpChartRef = useRef<HTMLDivElement>(null);
-  const grpTableRef = useRef<HTMLDivElement>(null);
-  const dl = daysLeft(expiresAt);
+    return { total: rows.length, complete, processing, cancel, revenue, statusChart, topDepotCount, topCityCount, topDepotRevenue };
+  }, [data]);
 
-  const ttStyle = {
-    contentStyle: {
-      background: "#1e293b",
-      border: "1px solid #334155",
-      borderRadius: 8,
-    },
-  };
+  const rows = (data?.rows as Row[]) ?? [];
+  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(rows.length / PAGE_SIZE);
 
-  return (
-    <div className="space-y-6">
-      {/* Dataset list */}
-      {datasets.length > 0 && (
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-medium text-sm">
-              Danh sach file da import
-            </h3>
-            <button
-              onClick={onImportNew}
-              className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 text-xs"
-            >
-              <Upload className="w-3.5 h-3.5" /> Import moi
-            </button>
-          </div>
-          <div className="space-y-2">
-            {datasets.map((ds) => {
-              const isActive = ds.id === id;
-              const dl2 = daysLeft(ds.expiresAt);
-              return (
-                <div
-                  key={ds.id}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2.5 cursor-pointer transition-colors ${
-                    isActive
-                      ? "bg-blue-600/20 border border-blue-500/40"
-                      : "bg-slate-900/50 border border-slate-700 hover:border-slate-600"
-                  }`}
-                  onClick={() => onSelectDataset(ds)}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate">
-                      {ds.fileName}
-                    </p>
-                    <p className="text-slate-400 text-xs">
-                      {ds.rowCount.toLocaleString()} dong -{" "}
-                      {new Date(ds.uploadedAt).toLocaleDateString("vi-VN")}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 ml-3">
-                    <span
-                      className={`flex items-center gap-1 text-xs ${
-                        dl2 <= 3 ? "text-red-400" : "text-slate-400"
-                      }`}
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      {dl2 > 0 ? `${dl2}ngay` : "Het han"}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteDataset(ds.id);
-                      }}
-                      className="text-slate-500 hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+  const ttStyle = { contentStyle: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8 } };
 
-      {/* File info */}
-      <div className="flex items-center gap-3 bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3">
-        <div className="flex-1">
-          <p className="text-white text-sm font-medium">{fileName}</p>
-          <p className="text-slate-400 text-xs">
-            {rowCount.toLocaleString()} dong - Het han:{" "}
-            {new Date(expiresAt).toLocaleDateString("vi-VN")} ({dl} ngay) -
-            Ngay moi nhat: <span className="text-blue-400">{A.todayStr}</span>{" "}
-            - WoW: <span className="text-amber-400">{A.wowStr}</span>
-          </p>
-        </div>
-      </div>
-
-      {/* 1. KPI */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">
-            Tong quan (Status = Complete)
-          </h2>
-          <ScreenshotBtn targetRef={kpiRef} />
-        </div>
-        <div
-          ref={kpiRef}
-          className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-900/50 p-4 rounded-xl"
-        >
-          {[
-            {
-              label: "GMV",
-              val: fmtGMV(A.gmv),
-              sub: fmtNum(A.gmv),
-              color: "text-blue-400",
-            },
-            {
-              label: "Driver Active",
-              val: fmtNum(A.driverActive),
-              sub: "tai xe co trip",
-              color: "text-green-400",
-            },
-            {
-              label: "Total Trip",
-              val: fmtNum(A.totalTrip),
-              sub: "completed trips",
-              color: "text-amber-400",
-            },
-            {
-              label: "TpD",
-              val: A.tpd.toFixed(2),
-              sub: "trips / driver",
-              color: "text-purple-400",
-            },
-          ].map((k) => (
-            <div
-              key={k.label}
-              className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center"
-            >
-              <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">
-                {k.label}
-              </p>
-              <p className={`text-2xl font-bold ${k.color}`}>{k.val}</p>
-              <p className="text-slate-500 text-xs mt-1">{k.sub}</p>
+  // Empty state
+  if (!data || !A) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {["Total Orders","Complete","Processing","Cancel","Total Revenue"].map((label) => (
+            <div key={label} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-center">
+              <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">{label}</p>
+              <p className="text-2xl font-bold text-slate-600">--</p>
             </div>
           ))}
         </div>
+        <div className="bg-slate-800/30 border border-dashed border-slate-700 rounded-2xl p-16 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-800 flex items-center justify-center">
+            <Upload className="w-8 h-8 text-slate-600" />
+          </div>
+          <p className="text-slate-400 text-lg font-medium mb-2">Chưa có dữ liệu</p>
+          <p className="text-slate-500 text-sm mb-6">Import file Excel để xem dashboard</p>
+          <button
+            onClick={onImportNew}
+            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 rounded-lg transition-colors"
+          >
+            Import file ngay
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* File info bar */}
+      <div className="flex items-center gap-3 bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-medium truncate">{data.fileName}</p>
+          <p className="text-slate-400 text-xs">
+            {data.rowCount.toLocaleString()} rows · Upload: {new Date(data.uploadedAt).toLocaleString("vi-VN")}
+          </p>
+        </div>
+        <button
+          onClick={onClearData}
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/40 px-3 py-1.5 rounded-lg transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Xóa data
+        </button>
       </div>
 
-      {/* 2. GMV by hour */}
+      {/* KPI Cards */}
+      <div ref={kpiRef} className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        {[
+          { label: "Total Orders", val: fmtNum(A.total), color: "text-white" },
+          { label: "Complete", val: fmtNum(A.complete), color: "text-green-400" },
+          { label: "Processing", val: fmtNum(A.processing), color: "text-blue-400" },
+          { label: "Cancel", val: fmtNum(A.cancel), color: "text-red-400" },
+          { label: "Total Revenue", val: fmtRevenue(A.revenue), color: "text-amber-400" },
+        ].map((k) => (
+          <div key={k.label} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-center">
+            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">{k.label}</p>
+            <p className={`text-2xl font-bold ${k.color}`}>{k.val}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Status Distribution */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-white font-semibold">GMV theo gio</h2>
-            <p className="text-slate-400 text-xs">Hom nay vs WoW tuan truoc</p>
-          </div>
-          <ScreenshotBtn targetRef={gmvChartRef} />
+          <h2 className="text-white font-semibold">Phân bổ Status</h2>
+          <ScreenshotBtn targetRef={statusRef} />
         </div>
-        <div ref={gmvChartRef} className="bg-slate-900/50 p-4 rounded-xl">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart
-              data={A.gmvChart}
-              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-            >
+        <div ref={statusRef} className="bg-slate-900/50 p-4 rounded-xl">
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={A.statusChart} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis
-                dataKey="hour"
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
-                interval={2}
-              />
-              <YAxis
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
-                tickFormatter={fmtGMV}
-              />
-              <Tooltip
-                {...ttStyle}
-                formatter={(v: number, name: string) => [
-                  fmtNum(v),
-                  name === "today"
-                    ? `Today (${A.todayStr})`
-                    : `WoW (${A.wowStr})`,
-                ]}
-              />
-              <Legend
-                formatter={(v) =>
-                  v === "today"
-                    ? `Today (${A.todayStr})`
-                    : `WoW (${A.wowStr})`
-                }
-              />
-              <Line
-                type="monotone"
-                dataKey="today"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-                name="today"
-              />
-              <Line
-                type="monotone"
-                dataKey="wow"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                dot={false}
-                strokeDasharray="5 5"
-                name="wow"
-              />
-            </LineChart>
+              <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
+              <Tooltip {...ttStyle} formatter={(v: number) => [fmtNum(v), "Orders"]} />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {A.statusChart.map((entry) => (
+                  <Cell key={entry.name} fill={STATUS_COLORS[entry.name.toLowerCase()] ?? "#94a3b8"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="flex justify-center gap-6 mt-2">
+            {A.statusChart.map((s) => (
+              <span key={s.name} className="text-slate-400 text-xs">
+                <span style={{ color: STATUS_COLORS[s.name.toLowerCase()] }}>■</span> {s.name}: {s.pct}%
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Top Depot by Orders */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-white font-semibold">Top 10 Depot theo Orders</h2>
+          <ScreenshotBtn targetRef={depotRef} />
+        </div>
+        <div ref={depotRef} className="bg-slate-900/50 p-4 rounded-xl">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={A.topDepotCount} layout="vertical" margin={{ top: 5, right: 40, left: 80, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+              <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
+              <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} width={75} />
+              <Tooltip {...ttStyle} formatter={(v: number) => [fmtNum(v), "Orders"]} />
+              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                {A.topDepotCount.map((_, i) => (
+                  <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* 3. Driver Active by hour */}
+      {/* Top Pickup City */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-white font-semibold">Driver Active theo gio</h2>
-            <p className="text-slate-400 text-xs">
-              So tai xe co trip theo gio, so sanh WoW
-            </p>
-          </div>
-          <ScreenshotBtn targetRef={drvChartRef} />
+          <h2 className="text-white font-semibold">Top 10 Pickup City theo Orders</h2>
+          <ScreenshotBtn targetRef={cityRef} />
         </div>
-        <div ref={drvChartRef} className="bg-slate-900/50 p-4 rounded-xl">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart
-              data={A.drvChart}
-              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis
-                dataKey="hour"
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
-                interval={2}
-              />
-              <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-              <Tooltip
-                {...ttStyle}
-                formatter={(v: number, name: string) => [
-                  fmtNum(v),
-                  name === "today"
-                    ? `Today (${A.todayStr})`
-                    : `WoW (${A.wowStr})`,
-                ]}
-              />
-              <Legend
-                formatter={(v) =>
-                  v === "today"
-                    ? `Today (${A.todayStr})`
-                    : `WoW (${A.wowStr})`
-                }
-              />
-              <Line
-                type="monotone"
-                dataKey="today"
-                stroke="#10b981"
-                strokeWidth={2}
-                dot={false}
-                name="today"
-              />
-              <Line
-                type="monotone"
-                dataKey="wow"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                dot={false}
-                strokeDasharray="5 5"
-                name="wow"
-              />
-            </LineChart>
+        <div ref={cityRef} className="bg-slate-900/50 p-4 rounded-xl">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={A.topCityCount} layout="vertical" margin={{ top: 5, right: 40, left: 80, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+              <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={fmtNum} />
+              <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} width={75} />
+              <Tooltip {...ttStyle} formatter={(v: number) => [fmtNum(v), "Orders"]} />
+              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                {A.topCityCount.map((_, i) => (
+                  <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* 4. GMV by Driver Group */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-white font-semibold">
-              GMV theo Driver Group - hom nay
-            </h2>
-            <p className="text-slate-400 text-xs">
-              GMV theo gio, phan tach theo nhom tai xe
-            </p>
-          </div>
-          <ScreenshotBtn targetRef={grpChartRef} />
-        </div>
-        <div ref={grpChartRef} className="bg-slate-900/50 p-4 rounded-xl">
-          <ResponsiveContainer width="100%" height={320}>
-            <LineChart
-              data={A.groupChart}
-              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis
-                dataKey="hour"
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
-                interval={2}
-              />
-              <YAxis
-                tick={{ fill: "#94a3b8", fontSize: 11 }}
-                tickFormatter={fmtGMV}
-              />
-              <Tooltip {...ttStyle} formatter={(v: number) => fmtNum(v)} />
-              <Legend wrapperStyle={{ paddingTop: 12, fontSize: 12 }} />
-              {A.groups.map((g, i) => (
-                <Line
-                  key={g}
-                  type="monotone"
-                  dataKey={g}
-                  stroke={COLORS[i % COLORS.length]}
-                  strokeWidth={2}
-                  dot={false}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* 5. Driver Group table */}
+      {/* Data Table */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700">
           <div>
-            <h2 className="text-white font-semibold">
-              Chi tiet theo Driver Group
-            </h2>
+            <h2 className="text-white font-semibold">Chi tiết đơn hàng</h2>
             <p className="text-slate-400 text-xs">
-              Tong hop toan bo du lieu (Status = Complete)
+              Hiển thị {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, rows.length)} / {fmtNum(rows.length)} rows
             </p>
           </div>
-          <ScreenshotBtn targetRef={grpTableRef} />
+          <ScreenshotBtn targetRef={tableRef} />
         </div>
-        <div ref={grpTableRef} className="overflow-x-auto bg-slate-900/30">
+        <div ref={tableRef} className="overflow-x-auto bg-slate-900/30">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-900/60">
-                {["Driver Group", "GMV", "Driver Active", "Total Trip", "TpD"].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      className={`px-4 py-3 text-slate-400 font-medium text-xs uppercase tracking-wider ${
-                        h === "Driver Group" ? "text-left" : "text-right"
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  )
-                )}
+                {["Order ID","Status","Depot","Total Pay Display","Pickup City"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-slate-400 font-medium text-xs uppercase tracking-wider whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {A.groupTable.map((r, i) => (
-                <tr
-                  key={r.g}
-                  className={`border-t border-slate-700/50 ${
-                    i % 2 === 0 ? "bg-slate-900/20" : ""
-                  }`}
-                >
-                  <td className="px-4 py-3 text-white font-medium">{r.g}</td>
-                  <td className="px-4 py-3 text-right text-blue-400">
-                    {fmtNum(r.gmv)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-green-400">
-                    {fmtNum(r.drv)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-amber-400">
-                    {fmtNum(r.trips)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-purple-400">
-                    {r.tpd.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-              <tr className="border-t-2 border-slate-600 bg-slate-900/50 font-semibold">
-                <td className="px-4 py-3 text-white">TOTAL</td>
-                <td className="px-4 py-3 text-right text-blue-300">
-                  {fmtNum(A.gmv)}
-                </td>
-                <td className="px-4 py-3 text-right text-green-300">
-                  {fmtNum(A.driverActive)}
-                </td>
-                <td className="px-4 py-3 text-right text-amber-300">
-                  {fmtNum(A.totalTrip)}
-                </td>
-                <td className="px-4 py-3 text-right text-purple-300">
-                  {A.tpd.toFixed(2)}
-                </td>
-              </tr>
+              {pageRows.map((r, i) => {
+                const s = String(r["Status"] ?? "").trim().toLowerCase();
+                const statusColor = s === "complete" ? "text-green-400" : s === "processing" ? "text-blue-400" : "text-red-400";
+                return (
+                  <tr key={i} className={`border-t border-slate-700/50 ${i % 2 === 0 ? "bg-slate-900/20" : ""}`}>
+                    <td className="px-4 py-2.5 text-slate-300 font-mono text-xs">{String(r["Order ID"] ?? "")}</td>
+                    <td className={`px-4 py-2.5 font-medium text-xs ${statusColor}`}>{String(r["Status"] ?? "")}</td>
+                    <td className="px-4 py-2.5 text-slate-300 text-xs">{String(r["Depot"] ?? "")}</td>
+                    <td className="px-4 py-2.5 text-amber-400 text-xs text-right">{String(r["Total Pay Display"] ?? "")}</td>
+                    <td className="px-4 py-2.5 text-slate-300 text-xs">{String(r["Pickup City"] ?? "")}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="text-sm text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              ← Trước
+            </button>
+            <span className="text-slate-400 text-sm">Trang {page + 1} / {totalPages}</span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page === totalPages - 1}
+              className="text-sm text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed px-3 py-1.5 rounded border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              Sau →
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
