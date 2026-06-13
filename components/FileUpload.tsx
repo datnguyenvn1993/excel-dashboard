@@ -5,7 +5,19 @@ import { ParsedData } from "@/types/data";
 import { saveData } from "@/lib/storage";
 
 const COLUMNS = ["Order ID", "Status", "Depot", "Total Pay Display", "Pickup City"];
-const VALID_STATUSES = new Set(["cancel", "complete", "processing"]);
+
+// Match flexibly: cancel/cancelled/canceled, complete/completed, processing/in progress
+function isValidStatus(val: string): boolean {
+  const v = val.trim().toLowerCase();
+  return (
+    v.startsWith("cancel") ||
+    v.startsWith("complete") ||
+    v === "processing" ||
+    v.startsWith("process") ||
+    v === "in progress" ||
+    v === "inprogress"
+  );
+}
 
 interface FileUploadProps {
   onUploadSuccess: (data: ParsedData) => void;
@@ -51,7 +63,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
         setProgress(`Đang lọc ${rawRows.length.toLocaleString()} rows...`);
 
-        // Case-insensitive column mapping
+        // Flexible column mapping — case-insensitive header name match
         const fileKeys = Object.keys(rawRows[0]);
         const colMap: Record<string, string> = {};
         for (const col of COLUMNS) {
@@ -63,16 +75,18 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
         const statusKey = colMap["Status"];
         if (!statusKey) {
-          setError(`Không tìm thấy cột "Status" trong file. Các cột hiện có: ${fileKeys.slice(0, 5).join(", ")}...`);
+          setError(
+            `Không tìm thấy cột "Status" trong file. Các cột hiện có: ${fileKeys.slice(0, 8).join(", ")}`
+          );
           setProgress(null);
           return;
         }
 
-        // Filter & transform: chỉ giữ Cancel/Complete/Processing, chỉ 5 cột
+        // Filter & transform
         const rows: Record<string, unknown>[] = [];
         for (const raw of rawRows) {
-          const statusVal = String(raw[statusKey] ?? "").trim().toLowerCase();
-          if (!VALID_STATUSES.has(statusVal)) continue;
+          const statusVal = String(raw[statusKey] ?? "").trim();
+          if (!isValidStatus(statusVal)) continue;
           const row: Record<string, unknown> = {};
           for (const [ourCol, fileCol] of Object.entries(colMap)) {
             row[ourCol] = raw[fileCol];
@@ -83,9 +97,17 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
         console.log(`Giữ lại ${rows.length}/${rawRows.length} rows sau khi lọc Status`);
 
         if (rows.length === 0) {
+          // Show sample status values to help debug
+          const sampleStatuses = [
+            ...new Set(
+              rawRows.slice(0, 500).map((r) => String(r[statusKey] ?? "").trim())
+            ),
+          ]
+            .filter(Boolean)
+            .slice(0, 8);
           setError(
-            `Không có row nào có Status = Complete / Processing / Cancel. ` +
-            `Kiểm tra lại giá trị cột "Status" trong file.`
+            `Không có row nào khớp Status. Giá trị Status trong file: ${sampleStatuses.join(", ")}. \n` +
+            `Chấp nhận: Cancel/Cancelled, Complete/Completed, Processing.`
           );
           setProgress(null);
           return;
@@ -138,7 +160,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           Hỗ trợ .xlsx/.xls/.csv · Chỉ giữ: Order ID, Status, Depot, Total Pay Display, Pickup City
         </p>
         <p className="text-slate-500 text-xs mt-1">
-          Chỉ lưu Status = Complete / Processing / Cancel
+          Chỉ lưu Status = Complete / Completed / Processing / Cancel / Cancelled
         </p>
       </div>
 
@@ -196,7 +218,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span>{error}</span>
+          <span style={{whiteSpace: "pre-line"}}>{error}</span>
         </div>
       )}
     </div>
