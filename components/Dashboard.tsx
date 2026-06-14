@@ -9,6 +9,7 @@ interface KPIResult {
 interface KPIData {
   national: KPIResult & { maxDate: string | null; minDate: string | null };
   depots: Array<{ depot: string } & KPIResult>;
+  availableDates: string[];
 }
 interface ChartData {
   todayDate: string | null; d7Date: string | null;
@@ -37,6 +38,11 @@ function formatGMV(v: number) {
   return v.toFixed(0);
 }
 const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN");
+function fmtDateVN(dateStr: string) {
+  // "2026-06-14" -> "14/6/2026"
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("vi-VN");
+}
 function getStatusGroup(s: string) {
   const l = s.toLowerCase();
   if (l.startsWith("complete")) return "complete";
@@ -125,6 +131,7 @@ function KPICard({ label, value, color = "blue", isDark }: { label: string; valu
 
 function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
   const t = kpi.total, tx = kpi.txActive;
+  // % Hoàn thành = complete / (complete + cancel), không tính processing
   const pctC = (kpi.complete + kpi.cancel) > 0 ? (kpi.complete/(kpi.complete+kpi.cancel))*100 : 0;
   const pctX = t ? (kpi.cancel/t)*100 : 0;
   const aov  = t ? kpi.gmv/t : 0;
@@ -166,20 +173,27 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [loading,   setLoading]   = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
 
+  // Date filter: "" = latest (MAX from DB), or a specific "YYYY-MM-DD"
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+
   const nationalRef = useRef<HTMLDivElement>(null);
   const depotsRef   = useRef<HTMLDivElement>(null);
   const hourlyRef   = useRef<HTMLDivElement>(null);
   const dailyRef    = useRef<HTMLDivElement>(null);
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (date: string) => {
     setLoading(true);
     setSelectedIds(new Set());
     try {
+      const url = date ? `/api/kpis?date=${date}` : "/api/kpis";
       const [k, c] = await Promise.all([
-        fetch("/api/kpis").then(r => r.json()),
+        fetch(url).then(r => r.json()),
         fetch("/api/chart").then(r => r.json()),
       ]);
-      setKpiData(k); setChartData(c);
+      setKpiData(k);
+      setChartData(c);
+      if (Array.isArray(k.availableDates)) setAvailableDates(k.availableDates);
     } finally { setLoading(false); }
   }, []);
 
@@ -192,19 +206,33 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     } finally { setTableLoading(false); }
   }, []);
 
-  useEffect(() => { fetchAll(); fetchTable(0); setTablePage(0); }, [refreshKey, fetchAll, fetchTable]);
+  // Reset and fetch latest on new import
+  useEffect(() => {
+    setSelectedDate("");
+    fetchAll("");
+    fetchTable(0);
+    setTablePage(0);
+  }, [refreshKey, fetchAll, fetchTable]);
+
   useEffect(() => { fetchTable(tablePage); }, [tablePage, fetchTable]);
+
+  function handleDateChange(date: string) {
+    setSelectedDate(date);
+    fetchAll(date);
+  }
 
   async function handleResetConfirmed() {
     await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
     setConfirm(null);
-    fetchAll(); fetchTable(0); setTablePage(0);
+    setSelectedDate("");
+    setAvailableDates([]);
+    fetchAll(""); fetchTable(0); setTablePage(0);
   }
 
   async function handleDeleteRowsConfirmed() {
     await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedIds] }) });
     setConfirm(null);
-    fetchAll(); fetchTable(tablePage);
+    fetchAll(selectedDate); fetchTable(tablePage);
   }
 
   const bg       = isDark ? "bg-gray-900" : "bg-gray-50";
@@ -217,8 +245,8 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
 
   const natKPI = kpiData?.national;
   const isEmpty = !natKPI || natKPI.total === 0;
-  const todayLabel = natKPI?.maxDate ? new Date(natKPI.maxDate + "T00:00:00").toLocaleDateString("vi-VN") : "";
-  const minLabel = natKPI?.minDate ? new Date(natKPI.minDate + "T00:00:00").toLocaleDateString("vi-VN") : "";
+  const minLabel = natKPI?.minDate ? fmtDateVN(natKPI.minDate) : "";
+  const maxLabel = natKPI?.maxDate ? fmtDateVN(natKPI.maxDate) : "";
   const todayShort = chartData?.todayDate?.slice(5).replace("-","/") ?? "—";
   const d7Short    = chartData?.d7Date?.slice(5).replace("-","/")    ?? "—";
 
@@ -241,21 +269,34 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
 
       {/* Header */}
       <div className={`sticky top-0 z-20 border-b ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"} px-6 py-3 shadow-sm`}>
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="min-w-0">
             <h1 className={`text-sm font-bold uppercase tracking-wide flex items-center gap-2 flex-wrap ${textPri}`}>
               📊 BÁO CÁO VẬN HÀNH PLATFORM
-              {natKPI?.maxDate && (
+              {minLabel && maxLabel && (
                 <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-xs font-semibold normal-case">
-                  Data: {minLabel} → {todayLabel}
+                  Data: {minLabel} → {maxLabel}
                 </span>
               )}
             </h1>
             <p className={`text-xs mt-0.5 ${textSec}`}>
-              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn (ngày gần nhất) · server-side`}
+              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ngày ${maxLabel}`}
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 items-center shrink-0 flex-wrap">
+            {/* Date picker */}
+            {availableDates.length > 0 && (
+              <select
+                value={selectedDate}
+                onChange={e => handleDateChange(e.target.value)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}
+              >
+                <option value="">Mới nhất</option>
+                {availableDates.map(d => (
+                  <option key={d} value={d}>{fmtDateVN(d)}</option>
+                ))}
+              </select>
+            )}
             <button onClick={() => setIsDark(v => !v)}
               className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-yellow-400 hover:bg-gray-700" : "border-gray-300 text-gray-600 hover:bg-gray-100"}`}>
               {isDark ? "☀️ Light" : "🌙 Dark"}
@@ -347,7 +388,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
           {chartData && (
             <div ref={dailyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className={`font-semibold text-sm ${textPri}`}>📅 Số đơn theo ngày (ngày gần nhất)</h3>
+                <h3 className={`font-semibold text-sm ${textPri}`}>📅 Số đơn theo ngày (10 ngày gần nhất)</h3>
                 <ScreenshotBtn targetRef={dailyRef} isDark={isDark} />
               </div>
               <ResponsiveContainer width="100%" height={280}>
