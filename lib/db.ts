@@ -29,6 +29,13 @@ export async function initDB() {
         value TEXT NOT NULL
       )
     `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS drivers (
+          sap_id TEXT PRIMARY KEY,
+          doi    TEXT NOT NULL,
+          imported_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
     initialized = true;
   } finally {
     client.release();
