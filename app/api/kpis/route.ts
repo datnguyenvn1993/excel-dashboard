@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { initDB, db } from "@/lib/db";
 import { REGION_ORDER, parseRegions, buildRegionSql } from "@/lib/regions";
 
 export async function GET(req: NextRequest) {
+  await initDB();
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date");
   const selectedRegions = parseRegions(searchParams.get("regions"));
