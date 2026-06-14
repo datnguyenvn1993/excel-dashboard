@@ -3,7 +3,7 @@ export const REGIONS: Record<string, string[]> = {
     "Thành Phố Hồ Chí Minh",
   ],
   "Hà Nội": [
-    "Thành Phố Hà Nội",
+    "Thành phố Hà Nội",
   ],
   "Miền Nam": [
     "Tỉnh Trà Vinh","Tỉnh Bình Dương","Tỉnh Bến Tre","Tỉnh Bình Phước",
@@ -38,7 +38,7 @@ export function citiesForRegions(names: string[]): string[] {
 export function buildRegionSql(col: string): string {
   const cases = Object.entries(REGIONS).map(([region, cities]) => {
     const list = cities.map(c => `'${c.replace(/'/g, "''")}'  `).join(", ");
-    return `WHEN TRIM(${col}) IN (${list}) THEN '${region}'`;
+    return `WHEN LOWER(TRIM(${col})) IN (${list}) THEN '${region}'`;
   });
   return `CASE \n  ${cases.join("\n  ")}\n  ELSE NULL\nEND`;
 }
