@@ -37,7 +37,7 @@ export function citiesForRegions(names: string[]): string[] {
 /** Build SQL CASE expression: pickup_city → region name (NULL if unknown) */
 export function buildRegionSql(col: string): string {
   const cases = Object.entries(REGIONS).map(([region, cities]) => {
-    const list = cities.map(c => `'${c.replace(/'/g, "''")}'  `).join(", ");
+    const list = cities.map(c => `'${c.toLowerCase().replace(/'/g, "''").trim()}'`).join(", ");
     return `WHEN LOWER(TRIM(${col})) IN (${list}) THEN '${region}'`;
   });
   return `CASE \n  ${cases.join("\n  ")}\n  ELSE NULL\nEND`;
