@@ -12,6 +12,13 @@ interface KPIData {
   availableDates: string[];
   lastImportAt: string | null;
 }
+
+interface TeamRow {
+  doi: string;
+  gmv: number; gmv_prev: number | null;
+  driver_active: number; driver_active_prev: number | null;
+  trip_complete: number; trip_complete_prev: number | null;
+}
 interface ChartData {
   todayDate: string | null; d7Date: string | null;
   hourly: { hour: string; today: number; d7: number }[];
@@ -61,6 +68,10 @@ function getRelativeStr(ts: string | null, now: number): string {
 function isImportStale(ts: string | null, now: number): boolean {
   if (!ts) return false;
   return (now - new Date(ts).getTime()) > 3600000;
+}
+function wowPct(curr: number, prev: number | null): number | null {
+  if (!prev || prev === 0) return null;
+  return (curr - prev) / prev * 100;
 }
 function getStatusGroup(s: string) {
   const l = s.toLowerCase();
@@ -270,12 +281,79 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const tick    = isDark ? "#9ca3af" : "#6b7280";
   const tt      = isDark ? { contentStyle: { background:"#1f2937", border:"1px solid #374151", fontSize:12, color:"#f3f4f6" } } : { contentStyle: { fontSize:12 } };
 
+  const fetchTeamReport = useCallback(async () => {
+    const p = new URLSearchParams();
+    if (selectedDate) p.set("date", selectedDate);
+    try {
+      const r = await fetch("/api/team-report?" + p.toString());
+      const d = await r.json();
+      if (!d.error) setTeamReport(d.teams || []);
+    } catch {}
+  }, [selectedDate]);
+
+  const fetchDriverInfo = useCallback(async () => {
+    try {
+      const r = await fetch("/api/drivers");
+      const d = await r.json();
+      if (!d.error) setDriverInfo({ total: d.total, lastImport: d.lastImport });
+    } catch {}
+  }, []);
+
+  const handleDriverFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingDrivers(true);
+    try {
+      const XLSX = await import("xlsx");
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 }) as string[][];
+      const headers = raw[0].map(h => String(h || "").trim());
+      const iSap = headers.indexOf("Mã SAP");
+      const iTT = headers.indexOf("Trạng thái");
+      const iTTTK = headers.indexOf("Trạng thái tài khoản");
+      const iDepot = headers.indexOf("Depot");
+      const iDoi = headers.indexOf("Đội");
+      if ([iSap, iTT, iTTTK, iDepot, iDoi].some(i => i === -1)) {
+        alert("Không tìm thấy đủ cột: Mã SAP, Trạng thái, Trạng thái tài khoản, Depot, Đội");
+        return;
+      }
+      const rows = raw.slice(1)
+        .filter(r => r[iSap] &&
+          String(r[iTT]||"").trim() === "Active" &&
+          String(r[iTTTK]||"").trim() === "Unlock" &&
+          String(r[iDepot]||"").trim() === "1032")
+        .map(r => ({ sap_id: String(r[iSap]).trim(), doi: String(r[iDoi]||"").trim() }));
+      const res = await fetch("/api/drivers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      const json = await res.json();
+      if (json.error) { alert("Lỗi: " + json.error); return; }
+      await fetchDriverInfo();
+      await fetchTeamReport();
+    } catch (err) {
+      alert("Lỗi đọc file: " + String(err));
+    } finally {
+      setImportingDrivers(false);
+      e.target.value = "";
+    }
+  }, [fetchDriverInfo, fetchTeamReport]);
+
   const natKPI  = kpiData?.national;
+  const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
+  const [importingDrivers, setImportingDrivers] = useState(false);
+  const [driverInfo, setDriverInfo] = useState<{total:number;lastImport:string|null}|null>(null);
+  const driverFileRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(id);
   }, []);
+  useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
+  useEffect(() => { fetchDriverInfo(); }, [fetchDriverInfo]);
   const importTimeStr = formatImportTime(kpiData?.lastImportAt ?? null);
   const importRelStr = getRelativeStr(kpiData?.lastImportAt ?? null, now);
   const importIsStale = isImportStale(kpiData?.lastImportAt ?? null, now);
@@ -355,6 +433,21 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
               className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-red-800 text-red-400 hover:bg-red-900/30" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
               🗑 Reset
             </button>
+            <div className="flex items-center gap-1">
+              <input ref={driverFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleDriverFile} />
+              <button
+                onClick={() => driverFileRef.current?.click()}
+                disabled={importingDrivers}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              >
+                {importingDrivers ? "Đang import..." : "Cập nhật ds tx"}
+              </button>
+              {driverInfo && (
+                <span className={"text-xs " + (isDark ? "text-gray-400" : "text-gray-500")}>
+                  ({driverInfo.total} tx)
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -519,6 +612,55 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
               </table>
             </div>
           </div>
+          {teamReport.length > 0 && (
+            <div className={"mt-6 rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
+              <div className={"px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
+                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
+                  <thead>
+                    <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
+                      <th className="px-3 py-2 text-left">Đội</th>
+                      <th className="px-3 py-2 text-right">GMV</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">Driver Act</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">Trip Cpl</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">TpD</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamReport.map(t => {
+                      const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
+                      const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
+                      const wGmv = wowPct(t.gmv, t.gmv_prev);
+                      const wDa = wowPct(t.driver_active, t.driver_active_prev);
+                      const wTc = wowPct(t.trip_complete, t.trip_complete_prev);
+                      const wTpd = wowPct(tpd, tpdPrev);
+                      const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+                      const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
+                      return (
+                        <tr key={t.doi} className={isDark ? "border-t border-gray-800 hover:bg-gray-800" : "border-t border-gray-100 hover:bg-gray-50"}>
+                          <td className="px-3 py-2 font-medium">{t.doi}</td>
+                          <td className="px-3 py-2 text-right">{(t.gmv/1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-right">{t.driver_active}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-right">{t.trip_complete}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-right">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
         </div>
       )}
