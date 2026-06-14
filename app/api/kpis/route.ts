@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
         GROUP BY depot ORDER BY depot
       `, queryArgs),
       // All available dates in DB sorted descending (newest first)
-      client.query(`SELECT DISTINCT create_date::text as date FROM orders ORDER BY create_date DESC`),
+      client.query(`SELECT DISTINCT create_date::text as date FROM orders ORDER BY 1 DESC`),
     ]);
 
     const r = nat.rows[0];
