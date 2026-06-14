@@ -50,6 +50,18 @@ function formatImportTime(ts: string | null): string {
   const yy = d.getFullYear();
   return hh + ":" + mm + " " + dd + "/" + mo + "/" + yy;
 }
+function getRelativeStr(ts: string | null, now: number): string {
+  if (!ts) return "";
+  const diff = Math.floor((now - new Date(ts).getTime()) / 60000);
+  if (diff < 1) return "(vừa xong)";
+  if (diff < 60) return "(" + diff + " phút trước)";
+  const h = Math.floor(diff / 60), m = diff % 60;
+  return "(" + h + " giờ" + (m > 0 ? " " + m + " phút" : "") + " trước)";
+}
+function isImportStale(ts: string | null, now: number): boolean {
+  if (!ts) return false;
+  return (now - new Date(ts).getTime()) > 3600000;
+}
 function getStatusGroup(s: string) {
   const l = s.toLowerCase();
   if (l.startsWith("complete")) return "complete";
@@ -259,7 +271,14 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const tt      = isDark ? { contentStyle: { background:"#1f2937", border:"1px solid #374151", fontSize:12, color:"#f3f4f6" } } : { contentStyle: { fontSize:12 } };
 
   const natKPI  = kpiData?.national;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
   const importTimeStr = formatImportTime(kpiData?.lastImportAt ?? null);
+  const importRelStr = getRelativeStr(kpiData?.lastImportAt ?? null, now);
+  const importIsStale = isImportStale(kpiData?.lastImportAt ?? null, now);
   const isEmpty = !natKPI || natKPI.total === 0;
   const availDates = kpiData?.availableDates ?? [];
   const displayDate = selectedDate || natKPI?.maxDate || "";
@@ -293,7 +312,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
               {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}`}
             </p>
             {importTimeStr && (
-              <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Cập nhật lúc: {importTimeStr}</p>
+              <p className={`text-xs ${importIsStale ? "text-red-500" : (isDark ? "text-gray-500" : "text-gray-400")}`}>Cập nhật lúc: {importTimeStr} {importRelStr}</p>
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
