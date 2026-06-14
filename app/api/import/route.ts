@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
   try {
     await initDB();
 
-    const body = await req.json() as { rows: ImportRow[]; isFirst: boolean };
-    const { rows, isFirst } = body;
+    const body = await req.json() as { rows: ImportRow[]; isFirst: boolean; datesInFile?: string[] };
+    const { rows, isFirst, datesInFile } = body;
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ error: "No rows" }, { status: 400 });
@@ -29,8 +29,12 @@ export async function POST(req: NextRequest) {
 
     const client = await db.connect();
     try {
-      if (isFirst) {
-        await client.query("TRUNCATE TABLE orders RESTART IDENTITY");
+      if (isFirst && datesInFile && datesInFile.length > 0) {
+        // Xóa chỉ các ngày có trong file đang upload, giữ lại dữ liệu các ngày khác
+        await client.query(
+          "DELETE FROM orders WHERE create_date = ANY($1::date[])",
+          [datesInFile]
+        );
       }
 
       for (let i = 0; i < rows.length; i += CHUNK) {
