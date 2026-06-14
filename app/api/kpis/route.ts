@@ -1,13 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-const DAY_FILTER = `create_date = (SELECT MAX(create_date) FROM orders)`;
 const GMV_FILTER = `LOWER(status) LIKE 'complete%' OR LOWER(status) IN ('in process','in progress') OR LOWER(status) LIKE 'process%'`;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const dateParam = searchParams.get("date"); // e.g. "2026-06-14"
+
+  // DAY_FILTER: if date param provided use it, else use MAX date from DB
+  const DAY_FILTER = dateParam
+    ? `create_date = $1::date`
+    : `create_date = (SELECT MAX(create_date) FROM orders)`;
+
   const client = await db.connect();
   try {
-    const [nat, dep] = await Promise.all([
+    const queryArgs = dateParam ? [dateParam] : [];
+
+    const [nat, dep, dates] = await Promise.all([
       client.query(`
         WITH deduped AS (
           SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
@@ -26,7 +35,7 @@ export async function GET() {
           MAX(create_date)::text as max_date,
           (SELECT MIN(create_date)::text FROM orders) as min_date
         FROM deduped
-      `),
+      `, queryArgs),
       client.query(`
         WITH deduped AS (
           SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
@@ -44,7 +53,9 @@ export async function GET() {
           COUNT(DISTINCT NULLIF(sap_profile_id,''))::int as tx_active
         FROM deduped
         GROUP BY depot ORDER BY depot
-      `),
+      `, queryArgs),
+      // All available dates in DB sorted descending (newest first)
+      client.query(`SELECT DISTINCT create_date::text as date FROM orders ORDER BY create_date DESC`),
     ]);
 
     const r = nat.rows[0];
@@ -59,11 +70,10 @@ export async function GET() {
         complete: d.complete, cancel: d.cancel,
         processing: d.processing, txActive: d.tx_active,
       })),
+      availableDates: dates.rows.map(d => d.date),
     });
   } catch (e) {
     console.error("kpis error:", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
-  } finally {
-    client.release();
-  }
+  } finally { client.release(); }
 }
