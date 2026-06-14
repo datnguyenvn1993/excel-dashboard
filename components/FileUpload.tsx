@@ -119,6 +119,9 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           };
         });
 
+        // Collect unique dates from this file (for targeted DELETE)
+        const datesInFile = [...new Set(processed.map(r => r.create_date).filter(Boolean))];
+
         // Split into batches
         const totalRows = processed.length;
         const batches: ImportRow[][] = [];
@@ -128,11 +131,15 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
         let sentRows = 0;
 
-        async function runBatch(batch: ImportRow[], isFirst: boolean) {
+        async function runBatch(batch: ImportRow[], isFirst: boolean, dates?: string[]) {
           const res = await fetch("/api/import", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ rows: batch, isFirst }),
+            body: JSON.stringify({
+              rows: batch,
+              isFirst,
+              ...(isFirst && dates ? { datesInFile: dates } : {}),
+            }),
           });
           if (!res.ok) {
             const text = await res.text();
@@ -144,8 +151,8 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
         setProgress({ sent: 0, total: totalRows, phase: "Đang upload lên server..." });
 
-        // Send first batch alone (it TRUNCATE + inserts) to avoid race condition
-        await runBatch(batches[0], true);
+        // Send first batch alone (it DELETEs by date + inserts) to avoid race condition
+        await runBatch(batches[0], true, datesInFile);
 
         // Send remaining batches with concurrency
         let idx = 1;
