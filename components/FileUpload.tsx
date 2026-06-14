@@ -11,7 +11,7 @@ const COL_ALIASES: Record<string, string[]> = {
   order_id:       ["order id", "order_id", "orderid"],
   status:         ["status order", "status", "order status", "trang thai"],
   depot:          ["city depot", "depot", "city_depot", "kho"],
-  total_pay:      ["total pay", "total_pay", "totalpay", "payment", "tong tien"],
+  total_pay:      ["total pay", "total pay display", "total_pay", "totalpay", "payment", "tong tien"],
   pickup_city:    ["driver group id", "driver group", "driver_group_id", "pickup city", "pickup_city"],
   create_time:    ["create date", "create time", "create_date", "create_time", "created at", "ngay tao", "thoi gian tao"],
   sap_profile_id: ["sap id", "sap profile id", "sap_id", "sap_profile_id", "sap profile", "sapid"],
