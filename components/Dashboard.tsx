@@ -7,7 +7,7 @@ interface KPIResult {
   total: number; gmv: number; complete: number; cancel: number; processing: number; txActive: number;
 }
 interface KPIData {
-  national: KPIResult & { maxDate: string | null };
+  national: KPIResult & { maxDate: string | null; minDate: string | null };
   depots: Array<{ depot: string } & KPIResult>;
 }
 interface ChartData {
@@ -125,7 +125,7 @@ function KPICard({ label, value, color = "blue", isDark }: { label: string; valu
 
 function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
   const t = kpi.total, tx = kpi.txActive;
-  const pctC = t ? (kpi.complete/t)*100 : 0;
+  const pctC = (kpi.complete + kpi.cancel) > 0 ? (kpi.complete/(kpi.complete+kpi.cancel))*100 : 0;
   const pctX = t ? (kpi.cancel/t)*100 : 0;
   const aov  = t ? kpi.gmv/t : 0;
   const gmvTx = tx ? kpi.gmv/tx : 0;
@@ -137,7 +137,6 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
     { label:"AOV",           value:fmt(aov),                  color:"purple" },
     { label:"Đơn hủy",      value:fmt(kpi.cancel),           color:"red"    },
     { label:"% Hủy",        value:pctX.toFixed(1)+"%",       color:"orange" },
-    { label:"Processing",   value:fmt(kpi.processing),       color:"blue"   },
   ];
   const tx2 = [
     { label:"TX Active", value:fmt(tx),           color:"green"  },
@@ -146,7 +145,7 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
   ];
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-7 gap-2">{order.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
+      <div className="grid grid-cols-6 gap-2">{order.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
       <div className={`border-t pt-2 ${isDark ? "border-gray-700" : "border-gray-100"}`}>
         <div className="grid grid-cols-3 gap-2 max-w-sm">{tx2.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
       </div>
@@ -219,6 +218,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const natKPI = kpiData?.national;
   const isEmpty = !natKPI || natKPI.total === 0;
   const todayLabel = natKPI?.maxDate ? new Date(natKPI.maxDate + "T00:00:00").toLocaleDateString("vi-VN") : "";
+  const minLabel = natKPI?.minDate ? new Date(natKPI.minDate + "T00:00:00").toLocaleDateString("vi-VN") : "";
   const todayShort = chartData?.todayDate?.slice(5).replace("-","/") ?? "—";
   const d7Short    = chartData?.d7Date?.slice(5).replace("-","/")    ?? "—";
 
@@ -247,12 +247,12 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
               📊 BÁO CÁO VẬN HÀNH PLATFORM
               {natKPI?.maxDate && (
                 <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-xs font-semibold normal-case">
-                  Đến ngày {todayLabel}
+                  Data: {minLabel} → {todayLabel}
                 </span>
               )}
             </h1>
             <p className={`text-xs mt-0.5 ${textSec}`}>
-              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn (10 ngày gần nhất) · server-side`}
+              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn (ngày gần nhất) · server-side`}
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -347,7 +347,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
           {chartData && (
             <div ref={dailyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className={`font-semibold text-sm ${textPri}`}>📅 Số đơn theo ngày (10 ngày gần nhất)</h3>
+                <h3 className={`font-semibold text-sm ${textPri}`}>📅 Số đơn theo ngày (ngày gần nhất)</h3>
                 <ScreenshotBtn targetRef={dailyRef} isDark={isDark} />
               </div>
               <ResponsiveContainer width="100%" height={280}>
