@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface KPIResult {
@@ -181,10 +181,7 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
   ];
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-7 gap-2">{order.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
-      <div className={`border-t pt-2 ${isDark ? "border-gray-700" : "border-gray-100"}`}>
-        <div className="grid grid-cols-3 gap-2 max-w-sm">{tx2.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
-      </div>
+      <div className="grid grid-cols-5 gap-2">{[...order,...tx2].map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
     </div>
   );
 }
@@ -299,6 +296,20 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     } catch {}
   }, []);
 
+  const fetchTxHourly = useCallback(async () => {
+    const p = new URLSearchParams();
+    const date = selectedDate;
+    if (date) p.set("date", date);
+    try {
+      const r = await fetch("/api/driver-hourly?" + p.toString());
+      if (!r.ok) return;
+      const data = await r.json();
+      setTxHourly(data.hourly || []);
+      setTxByTeam(data.byTeam || {});
+    } catch { /* ignore */ }
+  }, [selectedDate]);
+
+
   const handleDriverFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -345,6 +356,9 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const natKPI  = kpiData?.national;
   const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
   const [importingDrivers, setImportingDrivers] = useState(false);
+  const [txHourly, setTxHourly] = useState<{hour:string;today:number;d7:number}[]>([]);
+  const [txByTeam, setTxByTeam] = useState<Record<string,{hour:string;count:number}[]>>({});
+  const [showTeamLines, setShowTeamLines] = useState(false);
   const [driverInfo, setDriverInfo] = useState<{total:number;lastImport:string|null}|null>(null);
   const driverFileRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -353,6 +367,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     return () => clearInterval(id);
   }, []);
   useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
+  useEffect(() => { fetchTxHourly(); }, [fetchTxHourly]);
   useEffect(() => { fetchDriverInfo(); }, [fetchDriverInfo]);
   const importTimeStr = formatImportTime(kpiData?.lastImportAt ?? null);
   const importRelStr = getRelativeStr(kpiData?.lastImportAt ?? null, now);
@@ -462,7 +477,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
           <button onClick={onImportNew} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Upload File</button>
         </div>
       ) : (
-        <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+        <div className="p-6 space-y-6 w-[90%] mx-auto">
 
           {/* National KPI */}
           <div ref={nationalRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
@@ -516,10 +531,80 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                   <YAxis tick={{ fontSize:11, fill:tick }} width={50} />
                   <Tooltip {...tt} formatter={(v: number, n: string) => [`${v} Tr`, n]} />
                   <Legend wrapperStyle={{ fontSize:12 }} />
-                  <Line type="monotone" dataKey="today" name={`Hôm nay (${todayShort})`} stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }} />
-                  <Line type="monotone" dataKey="d7"    name={`D-7 (${d7Short})`}          stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }} />
+                  <Line type="monotone" dataKey="today" name={`Hôm nay (${todayShort})`} stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
+                <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?(v/1e6).toFixed(1)+"M":""} />
+              </Line>
+                  <Line type="monotone" dataKey="d7"    name={`D-7 (${d7Short})`}          stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
+                <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?(v/1e6).toFixed(1)+"M":""} />
+              </Line>
                 </LineChart>
               </ResponsiveContainer>
+            </div>
+          )}
+
+
+          {teamReport.length > 0 && (
+            <div className={"mt-6 rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
+              <div className={"px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
+                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
+                  <thead>
+                    <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
+                      <th className="px-3 py-2 text-left">Đội</th>
+                      <th className="px-3 py-2 text-right">GMV</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">Driver Act</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">Trip Cpl</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">TpD</th>
+                      <th className="px-3 py-2 text-right">WoW%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamReport.map(t => {
+                      const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
+                      const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
+                      const wGmv = wowPct(t.gmv, t.gmv_prev);
+                      const wDa = wowPct(t.driver_active, t.driver_active_prev);
+                      const wTc = wowPct(t.trip_complete, t.trip_complete_prev);
+                      const wTpd = wowPct(tpd, tpdPrev);
+                      const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+                      const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
+                      return (
+                        <tr key={t.doi} className={isDark ? "border-t border-gray-800 hover:bg-gray-800" : "border-t border-gray-100 hover:bg-gray-50"}>
+                          <td className="px-3 py-2 font-medium">{t.doi}</td>
+                          <td className="px-3 py-2 text-right">{(t.gmv/1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-right">{t.driver_active}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-right">{t.trip_complete}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-right">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Driver Active Chart */}
+          {txHourly.length > 0 && (
+            <div className={"rounded-xl border overflow-hidden " + (isDark ? "border-gray-700" : "border-gray-200")}>
+              <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
+                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Driver Active theo gi\u1EDD</h3>
+                <label className={"flex items-center gap-2 text-xs cursor-pointer " + (isDark ? "text-gray-300" : "text-gray-600")}>
+                  <input type="checkbox" checked={showTeamLines} onChange={e => setShowTeamLines(e.target.checked)} className="rounded" /> Theo \u0111\u1ED9i
+                </label>
+              </div>
+              <div className={"p-4 " + (isDark ? "bg-gray-900" : "bg-white")}>
+                {(()=>{ const teams=Object.keys(txByTeam); const COLORS=["#10b981","#f43f5e","#8b5cf6","#06b6d4","#84cc16","#f97316"]; const tick=isDark?"#9ca3af":"#6b7280"; const data=txHourly.map(h=>{ const row:Record<string,string|number>={hour:h.hour,today:h.today,d7:h.d7}; if(showTeamLines) teams.forEach(doi=>{const a=txByTeam[doi].find(x=>x.hour===h.hour);row[doi]=a?a.count:0;}); return row; }); return (<ResponsiveContainer width="100%" height={280}><LineChart data={data} margin={{top:20,right:30,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis tick={{fill:tick,fontSize:11}} /><Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Gi\u1EDD "+h} /><Legend wrapperStyle={{fontSize:12}} /><Line type="monotone" dataKey="today" name="H\u00F4m nay" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}}><LabelList dataKey="today" position="top" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line><Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{r:2}} activeDot={{r:4}}><LabelList dataKey="d7" position="bottom" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>{showTeamLines&&teams.map((doi,i)=>(<Line key={doi} type="monotone" dataKey={doi} name={doi} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} dot={{r:2}} />))}</LineChart></ResponsiveContainer>); })()}
+              </div>
             </div>
           )}
 
@@ -537,9 +622,9 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                   <YAxis tick={{ fontSize:11, fill:tick }} width={50} />
                   <Tooltip {...tt} />
                   <Legend wrapperStyle={{ fontSize:12 }} />
-                  <Line type="monotone" dataKey="complete"   name="Hoàn thành" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r:4 }} />
-                  <Line type="monotone" dataKey="processing" name="Processing"  stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r:4 }} />
-                  <Line type="monotone" dataKey="cancel"     name="Hủy"         stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r:4 }} />
+                  <Line type="monotone" dataKey="complete"   name="Hoàn thành" stroke="#10b981" strokeWidth={2} dot={{ r:3 }} activeDot={{ r:4 }} />
+                  <Line type="monotone" dataKey="processing" name="Processing"  stroke="#3b82f6" strokeWidth={2} dot={{ r:3 }} activeDot={{ r:4 }} />
+                  <Line type="monotone" dataKey="cancel"     name="Hủy"         stroke="#ef4444" strokeWidth={2} dot={{ r:3 }} activeDot={{ r:4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -612,55 +697,6 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
               </table>
             </div>
           </div>
-          {teamReport.length > 0 && (
-            <div className={"mt-6 rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
-              <div className={"px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
-                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
-                  <thead>
-                    <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
-                      <th className="px-3 py-2 text-left">Đội</th>
-                      <th className="px-3 py-2 text-right">GMV</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">Driver Act</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">Trip Cpl</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">TpD</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {teamReport.map(t => {
-                      const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
-                      const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
-                      const wGmv = wowPct(t.gmv, t.gmv_prev);
-                      const wDa = wowPct(t.driver_active, t.driver_active_prev);
-                      const wTc = wowPct(t.trip_complete, t.trip_complete_prev);
-                      const wTpd = wowPct(tpd, tpdPrev);
-                      const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
-                      const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
-                      return (
-                        <tr key={t.doi} className={isDark ? "border-t border-gray-800 hover:bg-gray-800" : "border-t border-gray-100 hover:bg-gray-50"}>
-                          <td className="px-3 py-2 font-medium">{t.doi}</td>
-                          <td className="px-3 py-2 text-right">{(t.gmv/1e6).toFixed(1)}M</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
-                          <td className="px-3 py-2 text-right">{t.driver_active}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
-                          <td className="px-3 py-2 text-right">{t.trip_complete}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
-                          <td className="px-3 py-2 text-right">{tpd.toFixed(2)}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
 
         </div>
       )}
