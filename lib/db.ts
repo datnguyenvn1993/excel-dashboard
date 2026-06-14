@@ -23,6 +23,12 @@ export async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_orders_date  ON orders(create_date)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_orders_depot ON orders(depot)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS metadata (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `);
     initialized = true;
   } finally {
     client.release();
