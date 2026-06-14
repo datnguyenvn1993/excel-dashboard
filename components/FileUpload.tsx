@@ -1,160 +1,260 @@
 "use client";
-import { useCallback, useState } from "react";
 
-const COLUMNS = ["Order ID","Status","Depot","Total Pay Display","Pickup City","Create Time","Sap Profile Id","Distance"];
-const BATCH_SIZE = 1000;
-const CONCURRENCY = 3;
+import { useCallback, useRef, useState } from "react";
 
-function parseDate(val: unknown): string | null {
-  const s = String(val ?? "").trim();
-  if (!s) return null;
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (m) {
-    const d2 = new Date(`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`);
-    if (!isNaN(d2.getTime())) return d2.toISOString().slice(0, 10);
+// Tăng batch size để upload nhanh hơn với file lớn
+const BATCH_SIZE = 5000;
+const CONCURRENCY = 5;
+
+// Column aliases (case-insensitive match)
+const COL_ALIASES: Record<string, string[]> = {
+  order_id:       ["order id", "order_id", "orderid"],
+  status:         ["status order", "status", "order status", "trang thai"],
+  depot:          ["city depot", "depot", "city_depot", "kho"],
+  total_pay:      ["total pay", "total_pay", "totalpay", "payment", "tong tien"],
+  pickup_city:    ["driver group id", "driver group", "driver_group_id", "pickup city", "pickup_city"],
+  create_time:    ["create date", "create time", "create_date", "create_time", "created at", "ngay tao", "thoi gian tao"],
+  sap_profile_id: ["sap id", "sap profile id", "sap_id", "sap_profile_id", "sap profile", "sapid"],
+  distance:       ["distance", "khoang cach"],
+};
+
+interface ImportRow {
+  order_id: string;
+  status: string;
+  depot: string;
+  total_pay: number;
+  pickup_city: string;
+  create_date: string;
+  create_hour: number;
+  sap_profile_id: string;
+  distance: string;
+}
+
+interface FileUploadProps {
+  onUploadSuccess: () => void;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseExcelDate(val: unknown, XLSX: any): { date: string; hour: number } {
+  if (typeof val === "number") {
+    try {
+      const info = XLSX.SSF.parse_date_code(val);
+      if (info) {
+        const month = String(info.m).padStart(2, "0");
+        const day   = String(info.d).padStart(2, "0");
+        return { date: `${info.y}-${month}-${day}`, hour: info.H || 0 };
+      }
+    } catch { /* fallthrough */ }
   }
-  return null;
+  if (typeof val === "string" && val.trim()) {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      return { date: d.toISOString().split("T")[0], hour: d.getHours() };
+    }
+  }
+  return { date: "", hour: 0 };
 }
-
-function parseHour(val: unknown): number | null {
-  const s = String(val ?? "").trim();
-  if (!s) return null;
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.getHours();
-  const m = s.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\s+(\d{1,2}):/);
-  if (m) return parseInt(m[1]);
-  return null;
-}
-
-function isValidStatus(v: string) {
-  const s = v.trim().toLowerCase();
-  return s.startsWith("cancel") || s.startsWith("complete") || s.startsWith("process") || s === "in progress";
-}
-
-interface FileUploadProps { onUploadSuccess: () => void; }
 
 export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDragging, setIsDragging]   = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError]             = useState<string | null>(null);
+  const [progress, setProgress]       = useState<{ sent: number; total: number; phase: string } | null>(null);
+  const abortRef = useRef(false);
 
-  const processFile = useCallback(async (file: File) => {
-    if (!file.name.match(/\.(xlsx|xls|csv)$/i)) { setError("Vui lòng upload file Excel (.xlsx, .xls) hoặc CSV."); return; }
-    setIsUploading(true); setError(null); setSuccess(null);
-    try {
-      setProgress(`Đang đọc file ${(file.size/1024/1024).toFixed(1)} MB...`);
-      const XLSX = await import("xlsx");
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json<Record<string,unknown>>(sheet, { raw: false, defval: "" });
-      if (!rawRows.length) { setError("File không có dữ liệu."); return; }
-
-      setProgress(`Đang xử lý ${rawRows.length.toLocaleString()} rows...`);
-      const fileKeys = Object.keys(rawRows[0]);
-      const colMap: Record<string,string> = {};
-      for (const col of COLUMNS) {
-        const match = fileKeys.find(k => k.trim().toLowerCase() === col.toLowerCase());
-        if (match) colMap[col] = match;
+  const processFile = useCallback(
+    async (file: File) => {
+      if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+        setError("Please upload an Excel (.xlsx, .xls) or CSV file.");
+        return;
       }
-      if (!colMap["Status"]) { setError(`Không tìm thấy cột "Status". Cột hiện có: ${fileKeys.slice(0,8).join(", ")}`); return; }
+      setIsUploading(true);
+      setError(null);
+      setProgress({ sent: 0, total: 0, phase: "Đang đọc file..." });
+      abortRef.current = false;
 
-      const rows = rawRows
-        .filter(r => isValidStatus(String(r[colMap["Status"]] ?? "")))
-        .map(r => ({
-          order_id:       String(r[colMap["Order ID"]] ?? ""),
-          status:         String(r[colMap["Status"]] ?? ""),
-          depot:          String(r[colMap["Depot"]] ?? ""),
-          total_pay:      parseFloat(String(r[colMap["Total Pay Display"]] ?? "").replace(/[^0-9.]/g,"")) || 0,
-          pickup_city:    String(r[colMap["Pickup City"]] ?? ""),
-          create_date:    parseDate(r[colMap["Create Time"]]),
-          create_hour:    parseHour(r[colMap["Create Time"]]),
-          sap_profile_id: String(r[colMap["Sap Profile Id"]] ?? ""),
-          distance:       String(r[colMap["Distance"]] ?? ""),
-        }));
+      try {
+        const XLSX = await import("xlsx");
+        const buffer = await file.arrayBuffer();
 
-      if (!rows.length) { setError("Không có dòng nào hợp lệ sau khi lọc Status."); return; }
-
-      const batches: typeof rows[] = [];
-      for (let i = 0; i < rows.length; i += BATCH_SIZE) batches.push(rows.slice(i, i + BATCH_SIZE));
-
-      setProgress(`Đang upload 0/${batches.length} batches...`);
-
-      // First batch: truncate + insert
-      const send = async (batch: typeof rows, isFirst: boolean) => {
-        const res = await fetch("/api/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows: batch, isFirst }),
+        setProgress({ sent: 0, total: 0, phase: "Đang phân tích dữ liệu..." });
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+          raw: true,
+          defval: "",
         });
-        if (!res.ok) throw new Error(await res.text());
-      };
 
-      await send(batches[0], true);
-      let done = 1;
-      for (let i = 1; i < batches.length; i += CONCURRENCY) {
-        await Promise.all(batches.slice(i, i + CONCURRENCY).map(b => send(b, false)));
-        done = Math.min(i + CONCURRENCY, batches.length);
-        setProgress(`Đang upload ${done}/${batches.length} batches...`);
+        if (rawRows.length === 0) {
+          setError("File không có dữ liệu.");
+          return;
+        }
+
+        // Build case-insensitive column map
+        const fileKeys = Object.keys(rawRows[0]);
+        const colMap: Record<string, string> = {};
+        for (const [field, aliases] of Object.entries(COL_ALIASES)) {
+          const match = fileKeys.find((k) =>
+            aliases.includes(k.trim().toLowerCase())
+          );
+          if (match) colMap[field] = match;
+        }
+
+        // Pre-process all rows
+        setProgress({ sent: 0, total: rawRows.length, phase: "Đang xử lý rows..." });
+
+        const processed: ImportRow[] = rawRows.map((raw) => {
+          const timeVal = colMap.create_time ? raw[colMap.create_time] : undefined;
+          const { date, hour } = parseExcelDate(timeVal, XLSX);
+          return {
+            order_id:       String(colMap.order_id       ? (raw[colMap.order_id]       ?? "") : ""),
+            status:         String(colMap.status         ? (raw[colMap.status]         ?? "") : ""),
+            depot:          String(colMap.depot          ? (raw[colMap.depot]          ?? "") : ""),
+            total_pay:      parseFloat(String(colMap.total_pay ? (raw[colMap.total_pay] ?? "0") : "0")) || 0,
+            pickup_city:    String(colMap.pickup_city    ? (raw[colMap.pickup_city]    ?? "") : ""),
+            create_date:    date,
+            create_hour:    hour,
+            sap_profile_id: String(colMap.sap_profile_id ? (raw[colMap.sap_profile_id] ?? "") : ""),
+            distance:       String(colMap.distance       ? (raw[colMap.distance]       ?? "") : ""),
+          };
+        });
+
+        // Split into batches
+        const totalRows = processed.length;
+        const batches: ImportRow[][] = [];
+        for (let i = 0; i < totalRows; i += BATCH_SIZE) {
+          batches.push(processed.slice(i, i + BATCH_SIZE));
+        }
+
+        let sentRows = 0;
+
+        async function runBatch(batch: ImportRow[], isFirst: boolean) {
+          const res = await fetch("/api/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rows: batch, isFirst }),
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || `HTTP ${res.status}`);
+          }
+          sentRows += batch.length;
+          setProgress({ sent: sentRows, total: totalRows, phase: "Đang upload lên server..." });
+        }
+
+        setProgress({ sent: 0, total: totalRows, phase: "Đang upload lên server..." });
+
+        // Send first batch alone (it TRUNCATE + inserts) to avoid race condition
+        await runBatch(batches[0], true);
+
+        // Send remaining batches with concurrency
+        let idx = 1;
+        while (idx < batches.length && !abortRef.current) {
+          const chunk = batches.slice(idx, idx + CONCURRENCY);
+          await Promise.all(chunk.map((batch) => runBatch(batch, false)));
+          idx += CONCURRENCY;
+        }
+
+        if (!abortRef.current) {
+          setProgress({ sent: totalRows, total: totalRows, phase: "Hoàn thành!" });
+          await new Promise((r) => setTimeout(r, 700));
+          onUploadSuccess();
+        }
+      } catch (err: unknown) {
+        console.error("Upload error:", err);
+        setError(err instanceof Error ? err.message : "Lỗi không xác định khi upload.");
+      } finally {
+        setIsUploading(false);
+        if (!abortRef.current) setProgress(null);
       }
+    },
+    [onUploadSuccess]
+  );
 
-      setSuccess(`✓ Imported ${rows.length.toLocaleString()} rows từ "${file.name}"`);
-      setTimeout(() => { onUploadSuccess(); }, 800);
-    } catch (err) {
-      console.error(err);
-      setError("Lỗi: " + String(err));
-    } finally {
-      setIsUploading(false); setProgress(null);
-    }
-  }, [onUploadSuccess]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file);
+    },
+    [processFile]
+  );
+
+  const pct = progress && progress.total > 0
+    ? Math.round((progress.sent / progress.total) * 100)
+    : null;
 
   return (
-    <div className="flex flex-col items-center gap-6 py-6">
+    <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6">
       <div className="text-center">
-        <h2 className="text-xl font-bold text-white mb-1">Import dữ liệu mới</h2>
-        <p className="text-slate-400 text-sm">Hỗ trợ .xlsx/.xls/.csv · 8 cột: Order ID, Status, Depot, Total Pay Display, Pickup City, Create Time, Sap Profile Id, Distance</p>
-        <p className="text-slate-500 text-xs mt-1">Data được lưu trên server — dùng được trên mọi thiết bị</p>
+        <h2 className="text-3xl font-bold text-white mb-2">Upload dữ liệu</h2>
+        <p className="text-slate-400">
+          Import file Excel (.xlsx/.xls) — dữ liệu lưu trên server, nhiều người dùng cùng xem
+        </p>
       </div>
+
       <div
-        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
-        onClick={() => document.getElementById("file-input-upload")?.click()}
-        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${isDragging ? "border-blue-400 bg-blue-500/10" : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"}`}
+        onDrop={handleDrop}
+        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer
+          ${isDragging
+            ? "border-blue-400 bg-blue-500/10"
+            : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"
+          }`}
+        onClick={() => !isUploading && document.getElementById("file-input")?.click()}
       >
-        <input id="file-input-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
-        {isUploading ? (
-          <div className="flex flex-col items-center gap-3">
+        <input
+          id="file-input"
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }}
+        />
+
+        {isUploading && progress ? (
+          <div className="flex flex-col items-center gap-4 w-full">
             <div className="w-10 h-10 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            <p className="text-slate-300 text-sm">{progress ?? "Đang xử lý..."}</p>
-          </div>
-        ) : success ? (
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-            </div>
-            <p className="text-green-400 font-medium text-sm">{success}</p>
-            <p className="text-slate-400 text-xs">Đang cập nhật dashboard...</p>
+            <p className="text-slate-300 font-medium">{progress.phase}</p>
+
+            {progress.total > 0 && (
+              <>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div
+                    className="bg-blue-400 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-slate-400 text-sm">
+                  {progress.sent.toLocaleString()} / {progress.total.toLocaleString()} rows
+                  {pct !== null && ` (${pct}%)`}
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <>
-            <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-slate-700 flex items-center justify-center">
-              <svg className="w-7 h-7 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700 flex items-center justify-center">
+              <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
             </div>
             <p className="text-white font-medium mb-1">Thả file vào đây</p>
             <p className="text-slate-400 text-sm">hoặc click để chọn file</p>
-            <p className="text-slate-500 text-xs mt-2">Hỗ trợ .xlsx, .xls, .csv · Tối đa 100MB</p>
+            <p className="text-slate-500 text-xs mt-3">Hỗ trợ .xlsx, .xls — tối đa 150MB</p>
           </>
         )}
       </div>
+
       {error && (
-        <div className="flex items-start gap-2 text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm max-w-lg w-full">
-          <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          <span style={{whiteSpace:"pre-line"}}>{error}</span>
+        <div className="flex items-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm max-w-lg w-full">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {error}
         </div>
       )}
     </div>
