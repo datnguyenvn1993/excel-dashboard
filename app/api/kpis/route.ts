@@ -1,26 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { REGION_ORDER, parseRegions, buildRegionSql } from "@/lib/regions";
 
 const GMV_FILTER = `LOWER(status) LIKE 'complete%' OR LOWER(status) IN ('in process','in progress') OR LOWER(status) LIKE 'process%'`;
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const dateParam = searchParams.get("date"); // e.g. "2026-06-14"
+  const dateParam = searchParams.get("date");
+  const selectedRegions = parseRegions(searchParams.get("regions"));
 
-  // DAY_FILTER: if date param provided use it, else use MAX date from DB
   const DAY_FILTER = dateParam
     ? `create_date = $1::date`
     : `create_date = (SELECT MAX(create_date) FROM orders)`;
+
+  const regionCaseSql = buildRegionSql("pickup_city");
+
+  // Region filter for SQL (safe — values validated against known list)
+  const regionFilterSql = selectedRegions.length > 0
+    ? `AND (${regionCaseSql}) IN (${selectedRegions.map(r => `'${r.replace(/'/g,"''")}'`).join(",")})`
+    : "";
 
   const client = await db.connect();
   try {
     const queryArgs = dateParam ? [dateParam] : [];
 
-    const [nat, dep, dates] = await Promise.all([
+    const [nat, reg, dates] = await Promise.all([
       client.query(`
         WITH deduped AS (
           SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
-            id, order_id, status, depot, total_pay, sap_profile_id, create_date
+            id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city
           FROM orders
           WHERE ${DAY_FILTER}
           ORDER BY COALESCE(NULLIF(order_id,''), id::text)
@@ -35,26 +43,32 @@ export async function GET(req: NextRequest) {
           MAX(create_date)::text as max_date,
           (SELECT MIN(create_date)::text FROM orders) as min_date
         FROM deduped
+        WHERE TRUE ${regionFilterSql}
       `, queryArgs),
       client.query(`
         WITH deduped AS (
           SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
-            id, order_id, status, depot, total_pay, sap_profile_id, create_date
+            id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city
           FROM orders
           WHERE ${DAY_FILTER}
           ORDER BY COALESCE(NULLIF(order_id,''), id::text)
+        ),
+        tagged AS (
+          SELECT *, (${regionCaseSql}) as region FROM deduped
         )
-        SELECT depot,
+        SELECT
+          region,
           COUNT(*)::int as total,
           COALESCE(SUM(total_pay) FILTER (WHERE ${GMV_FILTER}), 0)::float as gmv,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status) IN ('in progress','in process'))::int as processing,
           COUNT(DISTINCT NULLIF(sap_profile_id,''))::int as tx_active
-        FROM deduped
-        GROUP BY depot ORDER BY depot
+        FROM tagged
+        WHERE region IS NOT NULL
+          ${selectedRegions.length > 0 ? `AND region IN (${selectedRegions.map(r=>`'${r.replace(/'/g,"''")}'`).join(",")})` : ""}
+        GROUP BY region
       `, queryArgs),
-      // All available dates in DB sorted descending (newest first)
       client.query(`SELECT DISTINCT create_date::text as date FROM orders ORDER BY 1 DESC`),
     ]);
 
@@ -65,11 +79,18 @@ export async function GET(req: NextRequest) {
         cancel: r.cancel, processing: r.processing,
         txActive: r.tx_active, maxDate: r.max_date, minDate: r.min_date,
       },
-      depots: dep.rows.map(d => ({
-        depot: d.depot, total: d.total, gmv: d.gmv,
-        complete: d.complete, cancel: d.cancel,
-        processing: d.processing, txActive: d.tx_active,
-      })),
+      regions: REGION_ORDER
+        .filter(name => selectedRegions.length === 0 || selectedRegions.includes(name))
+        .map(name => {
+          const row = reg.rows.find(r => r.region === name);
+          if (!row) return null;
+          return {
+            region: name, total: row.total, gmv: row.gmv,
+            complete: row.complete, cancel: row.cancel,
+            processing: row.processing, txActive: row.tx_active,
+          };
+        })
+        .filter(Boolean),
       availableDates: dates.rows.map(d => d.date),
     });
   } catch (e) {
