@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
           "DELETE FROM orders WHERE create_date = ANY($1::date[])",
           [datesInFile]
         );
+      } else if (isFirst) {
+        await client.query("TRUNCATE TABLE orders RESTART IDENTITY");
       }
 
       for (let i = 0; i < rows.length; i += CHUNK) {
@@ -63,6 +65,12 @@ export async function POST(req: NextRequest) {
           values
         );
       }
+
+      // Lưu thời điểm import cuối cùng
+      await client.query(
+        `INSERT INTO metadata (key, value) VALUES ('last_import_at', NOW()::text)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+      );
 
       return NextResponse.json({ inserted: rows.length });
     } finally {
