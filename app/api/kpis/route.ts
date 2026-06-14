@@ -3,29 +3,47 @@ import { db } from "@/lib/db";
 
 const D10 = `create_date >= (SELECT COALESCE(MAX(create_date)-INTERVAL '10 days','2000-01-01'::date) FROM orders)`;
 
+// GMV: chỉ tính status Completed hoặc IN PROCESS, dedup theo order_id
+const GMV_FILTER = `LOWER(status) LIKE 'complete%' OR LOWER(status) IN ('in process','in progress') OR LOWER(status) LIKE 'process%'`;
+
 export async function GET() {
   const client = await db.connect();
   try {
     const [nat, dep] = await Promise.all([
       client.query(`
-        SELECT COUNT(*)::int as total,
-          COALESCE(SUM(total_pay),0)::float as gmv,
+        WITH deduped AS (
+          SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
+            id, order_id, status, depot, total_pay, sap_profile_id, create_date
+          FROM orders
+          WHERE ${D10}
+          ORDER BY COALESCE(NULLIF(order_id,''), id::text)
+        )
+        SELECT
+          COUNT(*)::int as total,
+          COALESCE(SUM(total_pay) FILTER (WHERE ${GMV_FILTER}), 0)::float as gmv,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
-          COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
+          COUNT(*) FILTER (WHERE LOWER(status) IN ('in process','in progress') OR LOWER(status) LIKE 'process%')::int as processing,
           COUNT(DISTINCT NULLIF(sap_profile_id,''))::int as tx_active,
           MAX(create_date)::text as max_date
-        FROM orders WHERE ${D10}
+        FROM deduped
       `),
       client.query(`
+        WITH deduped AS (
+          SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
+            id, order_id, status, depot, total_pay, sap_profile_id, create_date
+          FROM orders
+          WHERE ${D10}
+          ORDER BY COALESCE(NULLIF(order_id,''), id::text)
+        )
         SELECT depot,
           COUNT(*)::int as total,
-          COALESCE(SUM(total_pay),0)::float as gmv,
+          COALESCE(SUM(total_pay) FILTER (WHERE ${GMV_FILTER}), 0)::float as gmv,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
-          COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
+          COUNT(*) FILTER (WHERE LOWER(status) IN ('in process','in progress') OR LOWER(status) LIKE 'process%')::int as processing,
           COUNT(DISTINCT NULLIF(sap_profile_id,''))::int as tx_active
-        FROM orders WHERE ${D10}
+        FROM deduped
         GROUP BY depot ORDER BY depot
       `),
     ]);
