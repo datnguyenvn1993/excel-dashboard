@@ -33,7 +33,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <main className="w-full">
         <Dashboard onImportNew={() => setShowModal(true)} refreshKey={refreshKey} />
       </main>
 
