@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { citiesForRegions, parseRegions } from "@/lib/regions";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const selectedRegions = parseRegions(searchParams.get("regions"));
+
   const client = await db.connect();
   try {
     const maxRes = await client.query(`SELECT MAX(create_date)::text as max_date FROM orders`);
@@ -15,11 +19,18 @@ export async function GET() {
     d7.setDate(d7.getDate() - 7);
     const d7Str = d7.toISOString().slice(0, 10);
 
+    // Build city filter if regions selected
+    const cities = selectedRegions.length > 0 ? citiesForRegions(selectedRegions) : [];
+    const cityFilterSql = cities.length > 0
+      ? `AND TRIM(pickup_city) IN (${cities.map(c => `'${c.replace(/'/g, "''")}'  `).join(",")})`
+      : "";
+
     const [hourlyRes, dailyRes] = await Promise.all([
       client.query(
         `SELECT create_date::text, create_hour, SUM(total_pay)::float as gmv
          FROM orders
          WHERE create_date IN ($1::date, $2::date) AND create_hour IS NOT NULL
+         ${cityFilterSql}
          GROUP BY create_date, create_hour ORDER BY create_date, create_hour`,
         [maxDate, d7Str]
       ),
@@ -30,6 +41,7 @@ export async function GET() {
            COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel
          FROM orders
          WHERE create_date >= $1::date - 10
+         ${cityFilterSql}
          GROUP BY create_date ORDER BY create_date`,
         [maxDate]
       ),
