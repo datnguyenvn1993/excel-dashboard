@@ -1,4 +1,5 @@
 "use client";
+"use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 
@@ -204,6 +205,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const regionsRef  = useRef<HTMLDivElement>(null);
   const hourlyRef   = useRef<HTMLDivElement>(null);
   const dailyRef    = useRef<HTMLDivElement>(null);
+  const teamReportRef    = useRef<HTMLDivElement>(null);
 
   const fetchAll = useCallback(async (date: string, regions: string[]) => {
     setLoading(true);
@@ -532,10 +534,10 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                   <Tooltip {...tt} formatter={(v: number, n: string) => [`${v} Tr`, n]} />
                   <Legend wrapperStyle={{ fontSize:12 }} />
                   <Line type="monotone" dataKey="today" name={`Hôm nay (${todayShort})`} stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
-                <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?(v/1e6).toFixed(1)+"M":""} />
+                <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?v.toFixed(1)+"Tr":""} />
               </Line>
                   <Line type="monotone" dataKey="d7"    name={`D-7 (${d7Short})`}          stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
-                <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?(v/1e6).toFixed(1)+"M":""} />
+                <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?v.toFixed(1)+"Tr":""} />
               </Line>
                 </LineChart>
               </ResponsiveContainer>
@@ -544,9 +546,10 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
 
 
           {teamReport.length > 0 && (
-            <div className={"mt-6 rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
-              <div className={"px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
+            <div ref={teamReportRef} className={"mt-6 rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
+              <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
+                <ScreenshotBtn targetRef={teamReportRef} isDark={isDark} />
               </div>
               <div className="overflow-x-auto">
                 <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
@@ -597,13 +600,13 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
           {txHourly.length > 0 && (
             <div className={"rounded-xl border overflow-hidden " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
-                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Driver Active theo gi\u1EDD</h3>
+                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Driver Active theo giờ</h3>
                 <label className={"flex items-center gap-2 text-xs cursor-pointer " + (isDark ? "text-gray-300" : "text-gray-600")}>
                   <input type="checkbox" checked={showTeamLines} onChange={e => setShowTeamLines(e.target.checked)} className="rounded" /> Theo \u0111\u1ED9i
                 </label>
               </div>
               <div className={"p-4 " + (isDark ? "bg-gray-900" : "bg-white")}>
-                {(()=>{ const teams=Object.keys(txByTeam); const COLORS=["#10b981","#f43f5e","#8b5cf6","#06b6d4","#84cc16","#f97316"]; const tick=isDark?"#9ca3af":"#6b7280"; const data=txHourly.map(h=>{ const row:Record<string,string|number>={hour:h.hour,today:h.today,d7:h.d7}; if(showTeamLines) teams.forEach(doi=>{const a=txByTeam[doi].find(x=>x.hour===h.hour);row[doi]=a?a.count:0;}); return row; }); return (<ResponsiveContainer width="100%" height={280}><LineChart data={data} margin={{top:20,right:30,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis tick={{fill:tick,fontSize:11}} /><Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Gi\u1EDD "+h} /><Legend wrapperStyle={{fontSize:12}} /><Line type="monotone" dataKey="today" name="H\u00F4m nay" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}}><LabelList dataKey="today" position="top" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line><Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{r:2}} activeDot={{r:4}}><LabelList dataKey="d7" position="bottom" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>{showTeamLines&&teams.map((doi,i)=>(<Line key={doi} type="monotone" dataKey={doi} name={doi} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} dot={{r:2}} />))}</LineChart></ResponsiveContainer>); })()}
+                {(()=>{ const teams=Object.keys(txByTeam); const COLORS=["#10b981","#f43f5e","#8b5cf6","#06b6d4","#84cc16","#f97316"]; const tick=isDark?"#9ca3af":"#6b7280"; const hasD7=txHourly.some(h=>h.d7>0); const data=txHourly.map(h=>{ const row:Record<string,string|number>={hour:h.hour,today:h.today,d7:h.d7}; if(showTeamLines) teams.forEach(doi=>{const a=txByTeam[doi].find(x=>x.hour===h.hour);row[doi]=a?a.count:0;}); return row; }); return (<ResponsiveContainer width="100%" height={300}><LineChart data={data} margin={{top:20,right:showTeamLines?50:30,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis yAxisId="left" tick={{fill:tick,fontSize:11}} />{showTeamLines&&<YAxis yAxisId="right" orientation="right" tick={{fill:tick,fontSize:11}} />}<Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Giờ "+h} /><Legend wrapperStyle={{fontSize:12}} /><Line yAxisId="left" type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}}><LabelList dataKey="today" position="top" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>{hasD7&&<Line yAxisId="left" type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{r:2}} activeDot={{r:4}}><LabelList dataKey="d7" position="bottom" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>}{showTeamLines&&teams.map((doi,i)=>(<Line yAxisId="right" key={doi} type="monotone" dataKey={doi} name={doi} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} dot={{r:2}} />))}</LineChart></ResponsiveContainer>); })()}
               </div>
             </div>
           )}
