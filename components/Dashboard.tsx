@@ -10,6 +10,7 @@ interface KPIData {
   national: KPIResult & { maxDate: string | null; minDate: string | null };
   regions: Array<{ region: string } & KPIResult>;
   availableDates: string[];
+  lastImportAt: string | null;
 }
 interface ChartData {
   todayDate: string | null; d7Date: string | null;
@@ -38,6 +39,17 @@ function formatGMV(v: number) {
   return v.toFixed(0);
 }
 const fmt = (n: number) => Math.round(n).toLocaleString("vi-VN");
+function formatImportTime(ts: string | null): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = d.getFullYear();
+  return hh + ":" + mm + " " + dd + "/" + mo + "/" + yy;
+}
 function getStatusGroup(s: string) {
   const l = s.toLowerCase();
   if (l.startsWith("complete")) return "complete";
@@ -247,6 +259,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const tt      = isDark ? { contentStyle: { background:"#1f2937", border:"1px solid #374151", fontSize:12, color:"#f3f4f6" } } : { contentStyle: { fontSize:12 } };
 
   const natKPI  = kpiData?.national;
+  const importTimeStr = formatImportTime(kpiData?.lastImportAt ?? null);
   const isEmpty = !natKPI || natKPI.total === 0;
   const availDates = kpiData?.availableDates ?? [];
   const displayDate = selectedDate || natKPI?.maxDate || "";
@@ -279,6 +292,9 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             <p className={`text-xs mt-0.5 ${textSec}`}>
               {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}`}
             </p>
+            {importTimeStr && (
+              <p className={`text-xs ${isDark ? "text-gray-500" : "text-gray-400"}`}>Cập nhật lúc: {importTimeStr}</p>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Date filter */}
