@@ -23,7 +23,8 @@ export async function GET() {
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status) IN ('in progress','in process'))::int as processing,
           COUNT(DISTINCT NULLIF(sap_profile_id,''))::int as tx_active,
-          MAX(create_date)::text as max_date
+          MAX(create_date)::text as max_date,
+          (SELECT MIN(create_date)::text FROM orders) as min_date
         FROM deduped
       `),
       client.query(`
@@ -51,7 +52,7 @@ export async function GET() {
       national: {
         total: r.total, gmv: r.gmv, complete: r.complete,
         cancel: r.cancel, processing: r.processing,
-        txActive: r.tx_active, maxDate: r.max_date,
+        txActive: r.tx_active, maxDate: r.max_date, minDate: r.min_date,
       },
       depots: dep.rows.map(d => ({
         depot: d.depot, total: d.total, gmv: d.gmv,
