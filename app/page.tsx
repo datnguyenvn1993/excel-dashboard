@@ -1,42 +1,20 @@
 "use client";
-
-import { useState, useEffect } from "react";
-import { ParsedData } from "@/types/data";
+import { useState } from "react";
 import Dashboard from "@/components/Dashboard";
 import FileUpload from "@/components/FileUpload";
-import { loadData, clearData, saveData } from "@/lib/storage";
 import { Upload } from "lucide-react";
 
 export default function Home() {
-  const [activeData, setActiveData] = useState<ParsedData | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
-    loadData()
-      .then((d) => { if (d) setActiveData(d); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleUploadSuccess = (data: ParsedData) => {
-    setActiveData(data);
+  const handleUploadSuccess = () => {
     setShowModal(false);
-  };
-
-  const handleClearData = async () => {
-    try { await clearData(); } catch {}
-    setActiveData(null);
-  };
-
-  const handleDataUpdate = async (data: ParsedData) => {
-    try { await saveData(data); } catch {}
-    setActiveData(data);
+    setRefreshKey(k => k + 1);
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -48,45 +26,25 @@ export default function Home() {
             </div>
             <span className="font-semibold text-white">Excel Dashboard</span>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
-          >
-            <Upload className="w-4 h-4" />
-            Import file
+          <button onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
+            <Upload className="w-4 h-4" /> Import file
           </button>
         </div>
       </header>
 
-      {/* Main */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
-          <Dashboard
-            data={activeData}
-            onImportNew={() => setShowModal(true)}
-            onClearData={handleClearData}
-            onDataUpdate={handleDataUpdate}
-          />
-        )}
+        <Dashboard onImportNew={() => setShowModal(true)} refreshKey={refreshKey} />
       </main>
 
-      {/* Upload Modal */}
       {showModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl">
             <div className="flex items-center justify-between px-6 pt-5 pb-2">
               <h3 className="text-white font-semibold text-lg">Import dữ liệu</h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
-              >
+              <button onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
