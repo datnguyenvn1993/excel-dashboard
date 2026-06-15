@@ -81,7 +81,6 @@ function getStatusGroup(s: string) {
   if (l.startsWith("process") || l === "in progress") return "processing";
   return "other";
 }
-
 async function captureToClipboard(el: HTMLElement, isDark: boolean) {
   const w = window as unknown as Record<string,unknown>;
   if (!w.html2canvas) {
@@ -186,7 +185,6 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
     </div>
   );
 }
-
 export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [isDark, setIsDark] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
@@ -206,46 +204,39 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const hourlyRef   = useRef<HTMLDivElement>(null);
   const dailyRef    = useRef<HTMLDivElement>(null);
   const teamReportRef    = useRef<HTMLDivElement>(null);
-  const driverChartRef   = useRef<HTMLDivElement>(null);
 
-  const fetchAll = useCallback(async (date: string, regions: string[], hour: string = "") => {
+  const fetchAll = useCallback(async (date: string, regions: string[]) => {
     setLoading(true);
     setSelectedIds(new Set());
     try {
-      const p = new URLSearchParams();
-      if (date) p.set("date", date);
-      if (regions.length > 0) p.set("regions", regions.join(","));
-      if (hour !== "") p.set("hour", hour);
+      const dateStr    = date    ? `date=${date}`                                    : "";
+      const regionsStr = regions.length > 0 ? `regions=${encodeURIComponent(regions.join(","))}` : "";
+      const sep = dateStr && regionsStr ? "&" : "";
       const [k, c] = await Promise.all([
-        fetch(`/api/kpis?${p}`).then(r => r.json()),
-        fetch(`/api/chart`).then(r => r.json()),
+        fetch(`/api/kpis?${dateStr}${sep}${regionsStr}`).then(r => r.json()),
+        fetch(`/api/chart?${regionsStr}`).then(r => r.json()),
       ]);
       setKpiData(k);
       setChartData(c);
-      // Set default date to max date on first load
       if (!date && k.availableDates?.length) {
         setSelectedDate(k.availableDates[0]);
       }
     } finally { setLoading(false); }
   }, []);
 
-  const [selectedHour, setSelectedHour] = useState<string>("");
   const fetchTable = useCallback(async (page: number) => {
     setTableLoading(true);
     setSelectedIds(new Set());
     try {
-      const fp = new URLSearchParams({ page: String(page), limit: "100" });
-      if (selectedHour !== "") fp.set("hour", selectedHour);
-      const t = await fetch(`/api/rows?${fp}`).then(r => r.json());
+      const t = await fetch(`/api/rows?page=${page}&limit=100`).then(r => r.json());
       setTableData(t);
     } finally { setTableLoading(false); }
-  }, [selectedHour]);
+  }, []);
 
   useEffect(() => {
     setSelectedDate("");
     setSelectedRegions([]);
-    setSelectedHour("");
-    fetchAll("", [], "");
+    fetchAll("", []);
     fetchTable(0);
     setTablePage(0);
   }, [refreshKey, fetchAll, fetchTable]);
@@ -257,30 +248,25 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
       ? selectedRegions.filter(r => r !== region)
       : [...selectedRegions, region];
     setSelectedRegions(next);
-    fetchAll(selectedDate, next, selectedHour);
+    fetchAll(selectedDate, next);
   }
 
   function handleDateChange(date: string) {
     setSelectedDate(date);
-    fetchAll(date, selectedRegions, selectedHour);
-  }
-
-  function handleHourChange(hour: string) {
-    setSelectedHour(hour);
-    fetchAll(selectedDate, selectedRegions, hour);
+    fetchAll(date, selectedRegions);
   }
 
   async function handleResetConfirmed() {
     await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
     setConfirm(null);
-    setSelectedDate(""); setSelectedRegions([]); setSelectedHour("");
-    fetchAll("", [], ""); fetchTable(0); setTablePage(0);
+    setSelectedDate(""); setSelectedRegions([]);
+    fetchAll("", []); fetchTable(0); setTablePage(0);
   }
 
   async function handleDeleteRowsConfirmed() {
     await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedIds] }) });
     setConfirm(null);
-    fetchAll(selectedDate, selectedRegions, selectedHour); fetchTable(tablePage);
+    fetchAll(selectedDate, selectedRegions); fetchTable(tablePage);
   }
 
   const bg      = isDark ? "bg-gray-900" : "bg-gray-50";
@@ -321,7 +307,6 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
       setTxByTeam(data.byTeam || {});
     } catch { /* ignore */ }
   }, [selectedDate]);
-
 
   const handleDriverFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -372,7 +357,6 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [txHourly, setTxHourly] = useState<{hour:string;today:number;d7:number}[]>([]);
   const [txByTeam, setTxByTeam] = useState<Record<string,{hour:string;count:number}[]>>({});
   const [showTeamLines, setShowTeamLines] = useState(false);
-  const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{total:number;lastImport:string|null}|null>(null);
   const driverFileRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -432,18 +416,10 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                 ))}
               </select>
             )}
-            {/* Hour filter */}
-          <select value={selectedHour} onChange={e => handleHourChange(e.target.value)}
-            className={`text-xs px-2 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}>
-            <option value="">Tất cả giờ</option>
-            {Array.from({length:24},(_,i)=>(
-              <option key={i} value={String(i)}>{String(i).padStart(2,"0")}:00</option>
-            ))}
-          </select>
-          {/* Region filter */}
+            {/* Region filter */}
             <div className={`flex items-center gap-1 text-xs ${textSec}`}>
               <span>Khu vực:</span>
-              <button onClick={() => { setSelectedRegions([]); fetchAll(selectedDate, [], selectedHour); }}
+              <button onClick={() => { setSelectedRegions([]); fetchAll(selectedDate, []); }}
                 className={`px-2 py-1 rounded border ${selectedRegions.length === 0
                   ? (isDark ? "bg-blue-600 border-blue-500 text-white" : "bg-blue-600 border-blue-600 text-white")
                   : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
@@ -618,13 +594,15 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
 
           {/* Driver Active Chart */}
           {txHourly.length > 0 && (
-            <div ref={driverChartRef} className={"rounded-xl border overflow-hidden " + (isDark ? "border-gray-700" : "border-gray-200")}>
+            <div className={"rounded-xl border overflow-hidden " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Driver Active theo giờ</h3>
-                <ScreenshotBtn targetRef={driverChartRef} isDark={isDark} />
+                <label className={"flex items-center gap-2 text-xs cursor-pointer " + (isDark ? "text-gray-300" : "text-gray-600")}>
+                  <input type="checkbox" checked={showTeamLines} onChange={e => setShowTeamLines(e.target.checked)} className="rounded" /> Theo đội
+                </label>
               </div>
               <div className={"p-4 " + (isDark ? "bg-gray-900" : "bg-white")}>
-                {(()=>{ const teams=Object.keys(txByTeam); const COLORS=["#10b981","#f43f5e","#8b5cf6","#06b6d4","#84cc16","#f97316"]; const tick=isDark?"#9ca3af":"#6b7280"; const handleLC=(d:any)=>{setHiddenLines(prev=>{const n=new Set(prev);n.has(d.dataKey)?n.delete(d.dataKey):n.add(d.dataKey);return n;});}; if(teams.length>0){const data=Array.from({length:24},(_,i)=>{const row:Record<string,string|number>={hour:String(i)};teams.forEach(doi=>{const a=txByTeam[doi].find(x=>x.hour===String(i));row[doi]=a?a.count:0;});return row;}); return (<ResponsiveContainer width="100%" height={300}><LineChart data={data} margin={{top:20,right:20,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis tick={{fill:tick,fontSize:11}} /><Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Giờ "+h} /><Legend onClick={handleLC} wrapperStyle={{fontSize:12,cursor:"pointer"}} formatter={(v:string,e:any)=><span style={{color:hiddenLines.has(e.dataKey)?"#9ca3af":undefined,textDecoration:hiddenLines.has(e.dataKey)?"line-through":undefined}}>{v}</span>} />{teams.map((doi,i)=>(<Line key={doi} type="monotone" dataKey={doi} name={doi} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} dot={{r:2}} activeDot={{r:4}} hide={hiddenLines.has(doi)}><LabelList dataKey={doi} position="top" style={{fontSize:8,fill:COLORS[i%COLORS.length]}} formatter={(v:number)=>v>0?String(v):""} /></Line>))}</LineChart></ResponsiveContainer>);}const hasD7=txHourly.some(h=>h.d7>0); return (<ResponsiveContainer width="100%" height={300}><LineChart data={txHourly} margin={{top:20,right:30,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis tick={{fill:tick,fontSize:11}} /><Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Giờ "+h} /><Legend wrapperStyle={{fontSize:12}} /><Line type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}}><LabelList dataKey="today" position="top" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>{hasD7&&<Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{r:2}} activeDot={{r:4}}><LabelList dataKey="d7" position="bottom" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>}</LineChart></ResponsiveContainer>);})()}
+                {(()=>{ const teams=Object.keys(txByTeam); const COLORS=["#10b981","#f43f5e","#8b5cf6","#06b6d4","#84cc16","#f97316"]; const tick=isDark?"#9ca3af":"#6b7280"; const hasD7=txHourly.some(h=>h.d7>0); const data=txHourly.map(h=>{ const row:Record<string,string|number>={hour:h.hour,today:h.today,d7:h.d7}; if(showTeamLines) teams.forEach(doi=>{const a=txByTeam[doi].find(x=>x.hour===h.hour);row[doi]=a?a.count:0;}); return row; }); return (<ResponsiveContainer width="100%" height={300}><LineChart data={data} margin={{top:20,right:showTeamLines?50:30,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis yAxisId="left" tick={{fill:tick,fontSize:11}} />{showTeamLines&&<YAxis yAxisId="right" orientation="right" tick={{fill:tick,fontSize:11}} />}<Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Giờ "+h} /><Legend wrapperStyle={{fontSize:12}} /><Line yAxisId="left" type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}}><LabelList dataKey="today" position="top" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>{hasD7&&<Line yAxisId="left" type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{r:2}} activeDot={{r:4}}><LabelList dataKey="d7" position="bottom" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>}{showTeamLines&&teams.map((doi,i)=>(<Line yAxisId="right" key={doi} type="monotone" dataKey={doi} name={doi} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} dot={{r:2}} />))}</LineChart></ResponsiveContainer>); })()}
               </div>
             </div>
           )}
