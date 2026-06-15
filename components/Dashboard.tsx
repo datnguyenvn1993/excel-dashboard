@@ -108,8 +108,8 @@ async function captureToClipboard(el: HTMLElement, isDark: boolean, o?: { waterm
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.save();
-      ctx.globalAlpha = 0.3;
-      ctx.font = "bold 24px sans-serif";
+      ctx.globalAlpha = 0.5;
+      ctx.font = "bold 34px sans-serif";
       ctx.fillStyle = isDark ? "#9ca3af" : "#6b7280";
       ctx.textAlign = "right";
       ctx.textBaseline = "top";
@@ -635,7 +635,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
             <div ref={teamReportRef} className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
-                <ScreenshotBtn targetRef={teamReportRef} isDark={isDark} />
+                <ScreenshotBtn targetRef={teamReportRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <div className="overflow-x-auto">
                 <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
