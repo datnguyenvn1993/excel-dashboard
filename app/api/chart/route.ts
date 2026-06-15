@@ -29,13 +29,14 @@ export async function GET(req: NextRequest) {
       client.query(
         `WITH deduped AS (
            SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
-             create_date, create_hour, total_pay, pickup_city
+             create_date, create_hour, total_pay, pickup_city, status
            FROM orders
            WHERE create_date IN ($1::date, $2::date) AND create_hour IS NOT NULL
            ${cityFilterSql}
            ORDER BY COALESCE(NULLIF(order_id,''), id::text)
          )
-         SELECT create_date::text, create_hour, SUM(total_pay)::float as gmv
+         SELECT create_date::text, create_hour,
+           COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
          FROM deduped
          GROUP BY create_date, create_hour ORDER BY create_date, create_hour`,
         [maxDate, d7Str]
@@ -59,22 +60,22 @@ export async function GET(req: NextRequest) {
       const h = row.create_hour;
       if (h < 0 || h > 23) continue;
       if (row.create_date === maxDate) todayGMV[h] += row.gmv;
-      if (row.create_date === d7Str)   d7GMV[h]   += row.gmv;
+      if (row.create_date === d7Str) d7GMV[h] += row.gmv;
     }
 
     return NextResponse.json({
       todayDate: maxDate,
       d7Date: d7Str,
       hourly: Array.from({ length: 24 }, (_, h) => ({
-        hour: String(h).padStart(2,"0") + "h",
+        hour: String(h).padStart(2, "0") + "h",
         today: Math.round(todayGMV[h] / 1_000_000),
-        d7:    Math.round(d7GMV[h]    / 1_000_000),
+        d7: Math.round(d7GMV[h] / 1_000_000),
       })),
       daily: dailyRes.rows.map(r => ({
-        date:       r.date.slice(5).replace("-", "/"),
-        complete:   r.complete,
+        date: r.date.slice(5).replace("-", "/"),
+        complete: r.complete,
         processing: r.processing,
-        cancel:     r.cancel,
+        cancel: r.cancel,
       })),
     });
   } catch (e) {

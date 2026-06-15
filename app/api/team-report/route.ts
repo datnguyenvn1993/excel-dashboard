@@ -4,11 +4,14 @@ import { initDB, db } from "@/lib/db";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date");
+  const hourParam = searchParams.get("hour");
+  const hour = hourParam !== null && hourParam !== "" ? parseInt(hourParam, 10) : null;
   await initDB();
   const client = await db.connect();
   try {
     const dateExpr = dateParam ? "$1::date" : "(SELECT MAX(create_date) FROM orders)";
     const prevExpr = dateParam ? "($1::date - INTERVAL '7 days')" : "((SELECT MAX(create_date) FROM orders) - INTERVAL '7 days')";
+    const hourFilterSql = hour !== null ? `AND o.create_hour = ${hour}` : "";
     const args = dateParam ? [dateParam] : [];
     const sql = `
       WITH curr AS (
@@ -18,7 +21,7 @@ export async function GET(req: NextRequest) {
           COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
         JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${dateExpr}
+        WHERE o.create_date = ${dateExpr} ${hourFilterSql}
         GROUP BY d.doi
       ),
       prev AS (
@@ -28,7 +31,7 @@ export async function GET(req: NextRequest) {
           COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
         JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${prevExpr}
+        WHERE o.create_date = ${prevExpr} ${hourFilterSql}
         GROUP BY d.doi
       )
       SELECT c.doi,

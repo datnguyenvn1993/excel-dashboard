@@ -8,14 +8,14 @@ const CONCURRENCY = 5;
 
 // Column aliases (case-insensitive match)
 const COL_ALIASES: Record<string, string[]> = {
-  order_id:       ["order id", "order_id", "orderid"],
-  status:         ["status order", "status", "order status", "trang thai"],
-  depot:          ["city depot", "depot", "city_depot", "kho"],
-  total_pay:      ["total pay", "total pay display", "total_pay", "totalpay", "payment", "tong tien"],
-  pickup_city:    ["driver group id", "driver group", "driver_group_id", "pickup city", "pickup_city"],
-  create_time:    ["create date", "create time", "create_date", "create_time", "created at", "ngay tao", "thoi gian tao"],
+  order_id: ["order id", "order_id", "orderid"],
+  status: ["status order", "status", "order status", "trang thai"],
+  depot: ["city depot", "depot", "city_depot", "kho"],
+  total_pay: ["total fee", "total fee display", "total_fee", "totalfee", "total pay", "total pay display", "total_pay", "totalpay", "payment", "tong tien"],
+  pickup_city: ["driver group id", "driver group", "driver_group_id", "pickup city", "pickup_city"],
+  create_time: ["create date", "create time", "create_date", "create_time", "created at", "ngay tao", "thoi gian tao"],
   sap_profile_id: ["sap id", "sap profile id", "sap_id", "sap_profile_id", "sap profile", "sapid"],
-  distance:       ["distance", "khoang cach"],
+  distance: ["distance", "khoang cach"],
 };
 
 interface ImportRow {
@@ -41,7 +41,7 @@ function parseExcelDate(val: unknown, XLSX: any): { date: string; hour: number }
       const info = XLSX.SSF.parse_date_code(val);
       if (info) {
         const month = String(info.m).padStart(2, "0");
-        const day   = String(info.d).padStart(2, "0");
+        const day = String(info.d).padStart(2, "0");
         return { date: `${info.y}-${month}-${day}`, hour: info.H || 0 };
       }
     } catch { /* fallthrough */ }
@@ -56,10 +56,10 @@ function parseExcelDate(val: unknown, XLSX: any): { date: string; hour: number }
 }
 
 export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
-  const [isDragging, setIsDragging]   = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [progress, setProgress]       = useState<{ sent: number; total: number; phase: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ sent: number; total: number; phase: string } | null>(null);
   const abortRef = useRef(false);
 
   const processFile = useCallback(
@@ -107,15 +107,15 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           const timeVal = colMap.create_time ? raw[colMap.create_time] : undefined;
           const { date, hour } = parseExcelDate(timeVal, XLSX);
           return {
-            order_id:       String(colMap.order_id       ? (raw[colMap.order_id]       ?? "") : ""),
-            status:         String(colMap.status         ? (raw[colMap.status]         ?? "") : ""),
-            depot:          String(colMap.depot          ? (raw[colMap.depot]          ?? "") : ""),
-            total_pay:      parseFloat(String(colMap.total_pay ? (raw[colMap.total_pay] ?? "0") : "0")) || 0,
-            pickup_city:    String(colMap.pickup_city    ? (raw[colMap.pickup_city]    ?? "") : ""),
-            create_date:    date,
-            create_hour:    hour,
+            order_id: String(colMap.order_id ? (raw[colMap.order_id] ?? "") : ""),
+            status: String(colMap.status ? (raw[colMap.status] ?? "") : ""),
+            depot: String(colMap.depot ? (raw[colMap.depot] ?? "") : ""),
+            total_pay: parseFloat(String(colMap.total_pay ? (raw[colMap.total_pay] ?? "0") : "0")) || 0,
+            pickup_city: String(colMap.pickup_city ? (raw[colMap.pickup_city] ?? "") : ""),
+            create_date: date,
+            create_hour: hour,
             sap_profile_id: String(colMap.sap_profile_id ? (raw[colMap.sap_profile_id] ?? "") : ""),
-            distance:       String(colMap.distance       ? (raw[colMap.distance]       ?? "") : ""),
+            distance: String(colMap.distance ? (raw[colMap.distance] ?? "") : ""),
           };
         });
 
