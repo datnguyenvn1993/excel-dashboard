@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Dashboard from "@/components/Dashboard";
 import FileUpload from "@/components/FileUpload";
 import { Upload } from "lucide-react";
@@ -7,11 +7,32 @@ import { Upload } from "lucide-react";
 export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [user, setUser] = useState<{ username: string, role: string, display_name: string } | null>(null);
+  const [loadingMsg, setLoadingMsg] = useState("Đang kiểm tra phiên làm việc...");
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then(r => r.json())
+      .then(data => {
+        if (data.user) setUser(data.user);
+        else window.location.href = "/login";
+      })
+      .catch(() => window.location.href = "/login");
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  };
 
   const handleUploadSuccess = () => {
     setShowModal(false);
     setRefreshKey(k => k + 1);
   };
+
+  if (!user) {
+    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">{loadingMsg}</div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -26,15 +47,30 @@ export default function Home() {
             </div>
             <span className="font-semibold text-white">Excel Dashboard</span>
           </div>
-          <button onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
-            <Upload className="w-4 h-4" /> Import file
-          </button>
+          <div className="flex items-center gap-3">
+            {user.role === "admin" && (
+              <a href="/admin" className="text-sm border border-cyan-500/30 hover:bg-cyan-500/10 text-cyan-100 px-3 py-1.5 rounded-lg transition-colors mr-2">
+                Quản lý User
+              </a>
+            )}
+            <div className="text-sm text-cyan-50 flex flex-col items-end mr-2">
+              <span className="font-medium text-white">{user.display_name || user.username}</span>
+              <span className="text-xs opacity-70 capitalize text-cyan-200">{user.role}</span>
+            </div>
+            <button onClick={handleLogout}
+              className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition-colors mr-3 font-medium">
+              Đăng xuất
+            </button>
+            <button onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
+              <Upload className="w-4 h-4" /> Import file
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="w-full">
-        <Dashboard onImportNew={() => setShowModal(true)} refreshKey={refreshKey} />
+        <Dashboard onImportNew={() => setShowModal(true)} refreshKey={refreshKey} currentUser={user} />
       </main>
 
       {showModal && (

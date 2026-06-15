@@ -40,7 +40,11 @@ const REGION_EMOJIS: Record<string, string> = {
 };
 const REGION_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6"];
 
-interface DashboardProps { onImportNew: () => void; refreshKey: number; }
+interface DashboardProps {
+  onImportNew?: () => void;
+  refreshKey?: number;
+  currentUser?: { username: string, role: string, display_name: string } | null;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatGMV(v: number) {
@@ -88,7 +92,7 @@ function getStatusGroup(s: string) {
   if (l.startsWith("process") || l === "in progress") return "processing";
   return "other";
 }
-async function captureToClipboard(el: HTMLElement, isDark: boolean) {
+async function captureToClipboard(el: HTMLElement, isDark: boolean, o?: { watermarkText?: string }) {
   const w = window as unknown as Record<string, unknown>;
   if (!w.html2canvas) {
     await new Promise<void>((res, rej) => {
@@ -100,6 +104,19 @@ async function captureToClipboard(el: HTMLElement, isDark: boolean) {
   }
   type H2C = (el: HTMLElement, o: object) => Promise<HTMLCanvasElement>;
   const canvas = await (w.html2canvas as H2C)(el, { scale: 2, useCORS: true, backgroundColor: isDark ? "#111827" : "#f9fafb" });
+  if (o?.watermarkText) {
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillStyle = isDark ? "#9ca3af" : "#6b7280";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "top";
+      ctx.fillText(o.watermarkText, canvas.width - 20, 20);
+      ctx.restore();
+    }
+  }
   return new Promise<void>(res => {
     canvas.toBlob(async blob => {
       if (!blob) { res(); return; }
@@ -130,12 +147,12 @@ async function downloadPng(el: HTMLElement, isDark: boolean, filename: string) {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function ScreenshotBtn({ targetRef, isDark }: { targetRef: React.RefObject<HTMLDivElement | null>; isDark: boolean }) {
+function ScreenshotBtn({ targetRef, isDark, watermarkText }: { targetRef: React.RefObject<HTMLDivElement | null>; isDark: boolean; watermarkText?: string }) {
   const [st, setSt] = useState<"idle" | "busy" | "done">("idle");
   return (
     <button onClick={async () => {
       if (!targetRef.current || st === "busy") return;
-      setSt("busy"); await captureToClipboard(targetRef.current, isDark); setSt("done"); setTimeout(() => setSt("idle"), 2000);
+      setSt("busy"); await captureToClipboard(targetRef.current, isDark, { watermarkText }); setSt("done"); setTimeout(() => setSt("idle"), 2000);
     }} className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isDark ? "border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 bg-gray-900" : "border-gray-300 text-gray-500 hover:text-gray-700 bg-white"}`}>
       {st === "busy" ? "⏳" : st === "done" ? "✅" : "📷"} {st === "busy" ? "Xử lý..." : st === "done" ? "Đã copy!" : "Chụp hình"}
     </button>
@@ -225,7 +242,7 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
+export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: DashboardProps) {
   const [isDark, setIsDark] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -248,6 +265,8 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{ total: number; lastImport: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const watermarkText = currentUser ? (currentUser.display_name || currentUser.username) : undefined;
 
   // Ref so fetchTable stays stable (not recreated when hour changes)
   const selectedHourRef = useRef<number | null>(null);
@@ -552,7 +571,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                 <h2 className={`font-bold text-sm uppercase tracking-wide ${textPri}`}>Toàn Quốc</h2>
                 <span className={`text-xs ${textSec}`}>({(natKPI?.total ?? 0).toLocaleString()} đơn)</span>
               </div>
-              <ScreenshotBtn targetRef={nationalRef} isDark={isDark} />
+              <ScreenshotBtn targetRef={nationalRef} isDark={isDark} watermarkText={watermarkText} />
             </div>
             {natKPI && <KPIRow kpi={natKPI} isDark={isDark} />}
           </div>
@@ -562,7 +581,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             <div ref={regionsRef} className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className={`font-bold text-sm uppercase tracking-wide ${textSec}`}>Theo Khu Vực</h2>
-                <ScreenshotBtn targetRef={regionsRef} isDark={isDark} />
+                <ScreenshotBtn targetRef={regionsRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 {kpiData!.regions.map(r => (
@@ -586,7 +605,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                 <h3 className={`font-semibold text-sm ${textPri}`}>
                   📈 GMV theo giờ — <span className="text-blue-500">Hôm nay ({todayShort})</span> vs <span className={textSec}>D-7 ({d7Short})</span>
                 </h3>
-                <ScreenshotBtn targetRef={hourlyRef} isDark={isDark} />
+                <ScreenshotBtn targetRef={hourlyRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <p className={`text-xs mb-4 ${textSec}`}>Đơn vị: Triệu VNĐ</p>
               <ResponsiveContainer width="100%" height={300}>
@@ -669,7 +688,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                       Theo đội
                     </button>
                   </div>
-                  <ScreenshotBtn targetRef={driverChartRef} isDark={isDark} />
+                  <ScreenshotBtn targetRef={driverChartRef} isDark={isDark} watermarkText={watermarkText} />
                 </div>
               </div>
               <div className={`p-4 ${isDark ? "bg-gray-900" : "bg-white"}`}>
@@ -716,7 +735,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             <div ref={dailyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className={`font-semibold text-sm ${textPri}`}>📅 Số đơn theo ngày (10 ngày gần nhất)</h3>
-                <ScreenshotBtn targetRef={dailyRef} isDark={isDark} />
+                <ScreenshotBtn targetRef={dailyRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={chartData.daily} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -725,9 +744,15 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                   <YAxis tick={{ fontSize: 11, fill: tick }} width={50} />
                   <Tooltip {...tt} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                    <LabelList dataKey="complete" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
+                  </Line>
+                  <Line type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                    <LabelList dataKey="processing" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
+                  </Line>
+                  <Line type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                    <LabelList dataKey="cancel" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
+                  </Line>
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -801,6 +826,43 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* ── Password Modal ────────────────────────────────────────────────────── */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className={`border rounded-2xl w-full max-w-sm shadow-2xl p-6 ${isDark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`}>
+            <h3 className="text-lg font-bold mb-4">Đổi mật khẩu</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const p1 = f.get('currentPassword') as string;
+              const p2 = f.get('newPassword') as string;
+              try {
+                const res = await fetch('/api/auth/change-password', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ currentPassword: p1, newPassword: p2 })
+                });
+                const d = await res.json();
+                if (!res.ok) alert("Lỗi: " + (d.error || "Không thể đổi pass"));
+                else { alert("Đổi thành công!"); setShowPasswordModal(false); }
+              } catch { alert("Lỗi mạng"); }
+            }}>
+              <div className="mb-4">
+                <label className="block text-sm mb-1 opacity-80">Mật khẩu hiện tại</label>
+                <input name="currentPassword" type="password" required className={`w-full border rounded px-3 py-2 ${isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-300"}`} />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm mb-1 opacity-80">Mật khẩu mới</label>
+                <input name="newPassword" type="password" required className={`w-full border rounded px-3 py-2 ${isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-300"}`} />
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowPasswordModal(false)} className={`px-4 py-2 border rounded ${isDark ? "border-gray-700 hover:bg-gray-800" : "border-gray-300 hover:bg-gray-50"}`}>Hủy</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Xác nhận</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
