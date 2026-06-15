@@ -5,9 +5,12 @@ const D10 = `create_date >= (SELECT COALESCE(MAX(create_date)-INTERVAL '10 days'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const page  = Math.max(0, parseInt(searchParams.get("page")  ?? "0"));
-  const limit = Math.min(500, parseInt(searchParams.get("limit") ?? "100"));
+  const page   = Math.max(0, parseInt(searchParams.get("page")  ?? "0"));
+  const limit  = Math.min(500, parseInt(searchParams.get("limit") ?? "100"));
   const offset = page * limit;
+  const hourRaw  = searchParams.get("hour");
+  const hourNum  = hourRaw !== null && hourRaw !== "" ? parseInt(hourRaw, 10) : NaN;
+  const HOUR_FILTER = !isNaN(hourNum) ? `AND create_hour = ${hourNum}` : "";
 
   const client = await db.connect();
   try {
@@ -15,11 +18,11 @@ export async function GET(req: NextRequest) {
       client.query(
         `SELECT id, order_id, status, depot, total_pay::float, pickup_city,
                 create_date::text, create_hour, sap_profile_id, distance
-         FROM orders WHERE ${D10}
+         FROM orders WHERE ${D10} ${HOUR_FILTER}
          ORDER BY create_date DESC, id DESC LIMIT $1 OFFSET $2`,
         [limit, offset]
       ),
-      client.query(`SELECT COUNT(*)::int as total FROM orders WHERE ${D10}`),
+      client.query(`SELECT COUNT(*)::int as total FROM orders WHERE ${D10} ${HOUR_FILTER}`),
     ]);
     return NextResponse.json({
       rows:  dataRes.rows,
