@@ -242,12 +242,12 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
   const [importingDrivers, setImportingDrivers] = useState(false);
   const [txHourly, setTxHourly] = useState<{ hour: string; today: number; d7: number }[]>([]);
-  const [txByRegion, setTxByRegion] = useState<Record<string, { hour: string; count: number }[]>>({});
+  const [txByTeam, setTxByTeam] = useState<Record<string, { hour: string; count: number }[]>>({});
+  const [teamNames, setTeamNames] = useState<string[]>([]);
   const [showTeamLines, setShowTeamLines] = useState(false);
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{ total: number; lastImport: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [driverChartBusy, setDriverChartBusy] = useState(false);
 
   // Ref so fetchTable stays stable (not recreated when hour changes)
   const selectedHourRef = useRef<number | null>(null);
@@ -326,7 +326,8 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
       if (!r.ok) return;
       const data = await r.json();
       setTxHourly(data.hourly || []);
-      setTxByRegion(data.byRegion || {});
+      setTxByTeam(data.byTeam || {});
+      setTeamNames(data.teams || []);
     } catch { }
   }, [selectedDate]);
 
@@ -435,12 +436,13 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const totalPages = tableData ? Math.ceil(tableData.total / tableData.limit) : 0;
 
   // Driver Active chart data
+  const TEAM_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16", "#06b6d4", "#d946ef", "#0ea5e9", "#a855f7", "#22c55e", "#e11d48", "#facc15", "#2dd4bf", "#fb923c", "#818cf8"];
   const driverChartData = txHourly.map(h => {
     const row: Record<string, string | number> = { hour: h.hour, today: h.today, d7: h.d7 };
     if (showTeamLines) {
-      ALL_REGIONS.forEach(region => {
-        const entry = (txByRegion[region] ?? []).find(x => x.hour === h.hour);
-        row[region] = entry?.count ?? 0;
+      teamNames.forEach(team => {
+        const entry = (txByTeam[team] ?? []).find(x => x.hour === h.hour);
+        row[team] = entry?.count ?? 0;
       });
     }
     return row;
@@ -461,7 +463,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
       )}
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className={`sticky top-0 z-20 border-b ${isDark ? "bg-cyan-900 border-cyan-800" : "bg-cyan-50 border-cyan-200"} px-6 py-3 shadow-sm`}>
+      <div className={`sticky top-0 z-20 border-b px-6 py-3 shadow-sm`} style={{ background: isDark ? "#1a8a8b" : "#27BDBE", borderColor: isDark ? "#178384" : "#22a7a8" }}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <h1 className={`text-sm font-bold uppercase tracking-wide ${textPri}`}>📊 BÁO CÁO VẬN HÀNH PLATFORM</h1>
@@ -667,14 +669,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                       Theo đội
                     </button>
                   </div>
-                  <button onClick={async () => {
-                    if (!driverChartRef.current || driverChartBusy) return;
-                    setDriverChartBusy(true);
-                    await downloadPng(driverChartRef.current, isDark, "driver-active.png");
-                    setDriverChartBusy(false);
-                  }} className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isDark ? "border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 bg-gray-900" : "border-gray-300 text-gray-500 hover:text-gray-700 bg-white"}`}>
-                    {driverChartBusy ? "⏳" : "📥"} PNG
-                  </button>
+                  <ScreenshotBtn targetRef={driverChartRef} isDark={isDark} />
                 </div>
               </div>
               <div className={`p-4 ${isDark ? "bg-gray-900" : "bg-white"}`}>
@@ -698,12 +693,14 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                         <LabelList dataKey="d7" position="bottom" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />
                       </Line>
                     )}
-                    {showTeamLines && REGION_ORDER.map((region, i) => (
-                      <Line key={region} type="monotone" dataKey={region} name={`${REGION_EMOJIS[region]} ${region}`}
-                        stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2}
+                    {showTeamLines && teamNames.map((team, i) => (
+                      <Line key={team} type="monotone" dataKey={team} name={team}
+                        stroke={TEAM_COLORS[i % TEAM_COLORS.length]} strokeWidth={2}
                         dot={{ r: 3 }} activeDot={{ r: 5 }}
-                        hide={hiddenLines.has(region)}
-                        strokeOpacity={hiddenLines.has(region) ? 0.2 : 1} />
+                        hide={hiddenLines.has(team)}
+                        strokeOpacity={hiddenLines.has(team) ? 0.2 : 1}>
+                        {!hiddenLines.has(team) && <LabelList dataKey={team} position="top" style={{ fontSize: 8, fill: TEAM_COLORS[i % TEAM_COLORS.length] }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
+                      </Line>
                     ))}
                   </LineChart>
                 </ResponsiveContainer>
