@@ -229,6 +229,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     } finally { setLoading(false); }
   }, []);
 
+  const [selectedHour, setSelectedHour] = useState<string>("");
   const fetchTable = useCallback(async (page: number) => {
     setTableLoading(true);
     setSelectedIds(new Set());
@@ -371,7 +372,6 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [txHourly, setTxHourly] = useState<{hour:string;today:number;d7:number}[]>([]);
   const [txByTeam, setTxByTeam] = useState<Record<string,{hour:string;count:number}[]>>({});
   const [showTeamLines, setShowTeamLines] = useState(false);
-  const [selectedHour, setSelectedHour] = useState<string>("");
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{total:number;lastImport:string|null}|null>(null);
   const driverFileRef = useRef<HTMLInputElement>(null);
