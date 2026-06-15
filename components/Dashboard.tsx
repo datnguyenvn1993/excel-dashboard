@@ -697,7 +697,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                         <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
                       </Line>
                     )}
-map((region, i) => (
+                    {showTeamLines && REGION_ORDER.map((region, i) => (
                       <Line key={region} type="monotone" dataKey={region} name={`${REGION_EMOJIS[region]} ${region}`}
                         stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2}
                         dot={{ r:3 }} activeDot={{ r:5 }}
