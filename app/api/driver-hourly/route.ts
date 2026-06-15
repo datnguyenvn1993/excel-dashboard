@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
         FROM orders
         WHERE create_date::text = $1
           AND TRIM(COALESCE(sap_profile_id,'')) != ''
-        GROUP BY 1, 2 ORDER BY 1, create_hour::int
+        GROUP BY 1, create_hour ORDER BY 1, create_hour::int
       `, [maxDate]),
     ]);
 
