@@ -1,19 +1,19 @@
 "use client";
-"use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface KPIResult {
   total: number; gmv: number; complete: number; cancel: number; processing: number; txActive: number;
+  d7Total?: number; d7Gmv?: number; d7TxActive?: number;
 }
 interface KPIData {
   national: KPIResult & { maxDate: string | null; minDate: string | null };
   regions: Array<{ region: string } & KPIResult>;
   availableDates: string[];
   lastImportAt: string | null;
+  d7Date: string | null;
 }
-
 interface TeamRow {
   doi: string;
   gmv: number; gmv_prev: number | null;
@@ -37,9 +37,11 @@ const ALL_REGIONS = ["Hồ Chí Minh", "Hà Nội", "Miền Nam", "Miền Bắc"
 const REGION_EMOJIS: Record<string, string> = {
   "Hồ Chí Minh": "🏙️", "Hà Nội": "🏛️", "Miền Nam": "🌴", "Miền Bắc": "⛰️",
 };
+const REGION_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6"];
 
 interface DashboardProps { onImportNew: () => void; refreshKey: number; }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatGMV(v: number) {
   if (v >= 1e9) return (v/1e9).toFixed(2) + " Tỉ";
   if (v >= 1e6) return (v/1e6).toFixed(1) + " Tr";
@@ -74,6 +76,10 @@ function wowPct(curr: number, prev: number | null): number | null {
   if (!prev || prev === 0) return null;
   return (curr - prev) / prev * 100;
 }
+function deltaPct(curr: number, prev: number | undefined): number | undefined {
+  if (!prev || prev === 0) return undefined;
+  return (curr - prev) / prev * 100;
+}
 function getStatusGroup(s: string) {
   const l = s.toLowerCase();
   if (l.startsWith("complete")) return "complete";
@@ -102,7 +108,27 @@ async function captureToClipboard(el: HTMLElement, isDark: boolean) {
     }, "image/png");
   });
 }
+async function downloadPng(el: HTMLElement, isDark: boolean, filename: string) {
+  const w = window as unknown as Record<string,unknown>;
+  if (!w.html2canvas) {
+    await new Promise<void>((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      s.onload = () => res(); s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  type H2C = (el: HTMLElement, o: object) => Promise<HTMLCanvasElement>;
+  const canvas = await (w.html2canvas as H2C)(el, { scale: 2, useCORS: true, backgroundColor: isDark ? "#111827" : "#f9fafb" });
+  canvas.toBlob(blob => {
+    if (!blob) return;
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = u; a.download = filename; a.click();
+    URL.revokeObjectURL(u);
+  }, "image/png");
+}
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
 function ScreenshotBtn({ targetRef, isDark }: { targetRef: React.RefObject<HTMLDivElement | null>; isDark: boolean }) {
   const [st, setSt] = useState<"idle"|"busy"|"done">("idle");
   return (
@@ -132,7 +158,17 @@ function ConfirmDialog({ title, message, isDark, onConfirm, onCancel }: { title:
   );
 }
 
-function KPICard({ label, value, color = "blue", isDark }: { label: string; value: string; color?: string; isDark: boolean }) {
+function DeltaBadge({ delta }: { delta: number | undefined }) {
+  if (delta === undefined) return null;
+  const up = delta >= 0;
+  return (
+    <div className={`text-[10px] mt-0.5 font-semibold ${up ? "text-green-500" : "text-red-500"}`}>
+      {up ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}% vs D-7
+    </div>
+  );
+}
+
+function KPICard({ label, value, color = "blue", isDark, delta }: { label: string; value: string; color?: string; isDark: boolean; delta?: number }) {
   const colors: Record<string, [string, string]> = {
     blue:   ["text-blue-600",   "border-l-blue-500"],
     green:  ["text-green-600",  "border-l-green-500"],
@@ -154,6 +190,7 @@ function KPICard({ label, value, color = "blue", isDark }: { label: string; valu
     <div className={`rounded-lg border-l-4 ${bc} p-3 shadow-sm min-w-0 ${isDark ? "bg-gray-800 border border-gray-700" : "bg-white border border-gray-100"}`}>
       <div className={`text-[10px] font-semibold uppercase tracking-wider mb-1 truncate ${isDark ? "text-gray-500" : "text-gray-400"}`}>{label}</div>
       <div className={`text-base font-bold ${tc} truncate`}>{value}</div>
+      <DeltaBadge delta={delta} />
     </div>
   );
 }
@@ -165,26 +202,28 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
   const aov  = t ? kpi.gmv/t : 0;
   const gmvTx = tx ? kpi.gmv/tx : 0;
   const tpd   = tx ? t/tx : 0;
-  const order = [
-    { label:"GMV",           value:formatGMV(kpi.gmv),  color:"blue"   },
-    { label:"Tổng đơn",     value:fmt(t),              color:"gray"   },
+  const d7GmvTx = (kpi.d7TxActive ?? 0) ? (kpi.d7Gmv ?? 0)/(kpi.d7TxActive!) : 0;
+  const d7Tpd   = (kpi.d7TxActive ?? 0) ? (kpi.d7Total ?? 0)/(kpi.d7TxActive!) : 0;
+  const cards = [
+    { label:"GMV",           value:formatGMV(kpi.gmv),  color:"blue",   delta: deltaPct(kpi.gmv, kpi.d7Gmv) },
+    { label:"Tổng đơn",     value:fmt(t),              color:"gray",   delta: deltaPct(t, kpi.d7Total) },
     { label:"% Hoàn thành", value:pctC.toFixed(1)+"%", color:"green"  },
     { label:"AOV",           value:fmt(aov),            color:"purple" },
     { label:"Đơn hủy",      value:fmt(kpi.cancel),     color:"red"    },
     { label:"% Hủy",        value:pctX.toFixed(1)+"%", color:"orange" },
     { label:"Processing",   value:fmt(kpi.processing), color:"blue"   },
-  ];
-  const tx2 = [
-    { label:"TX Active", value:fmt(tx),          color:"green"  },
-    { label:"GMV/TX",    value:formatGMV(gmvTx), color:"blue"   },
-    { label:"TpD",       value:tpd.toFixed(1),   color:"purple" },
+    { label:"TX Active",    value:fmt(tx),             color:"green",  delta: deltaPct(tx, kpi.d7TxActive) },
+    { label:"GMV/TX",       value:formatGMV(gmvTx),   color:"blue",   delta: (kpi.d7TxActive ?? 0) ? deltaPct(gmvTx, d7GmvTx) : undefined },
+    { label:"TpD",          value:tpd.toFixed(1),      color:"purple", delta: (kpi.d7TxActive ?? 0) ? deltaPct(tpd, d7Tpd) : undefined },
   ];
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-5 gap-2">{[...order,...tx2].map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}</div>
+    <div className="grid grid-cols-5 gap-2">
+      {cards.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}
     </div>
   );
 }
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [isDark, setIsDark] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
@@ -192,29 +231,49 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [tablePage, setTablePage] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [selectedHour, setSelectedHour] = useState<number | null>(null);
 
   const [kpiData,   setKpiData]   = useState<KPIData | null>(null);
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [tableData, setTableData] = useState<TableData | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
+  const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
+  const [importingDrivers, setImportingDrivers] = useState(false);
+  const [txHourly, setTxHourly] = useState<{hour:string;today:number;d7:number}[]>([]);
+  const [txByRegion, setTxByRegion] = useState<Record<string,{hour:string;count:number}[]>>({});
+  const [showTeamLines, setShowTeamLines] = useState(false);
+  const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
+  const [driverInfo, setDriverInfo] = useState<{total:number;lastImport:string|null}|null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [driverChartBusy, setDriverChartBusy] = useState(false);
 
-  const nationalRef = useRef<HTMLDivElement>(null);
-  const regionsRef  = useRef<HTMLDivElement>(null);
-  const hourlyRef   = useRef<HTMLDivElement>(null);
-  const dailyRef    = useRef<HTMLDivElement>(null);
-  const teamReportRef    = useRef<HTMLDivElement>(null);
+  const nationalRef    = useRef<HTMLDivElement>(null);
+  const regionsRef     = useRef<HTMLDivElement>(null);
+  const hourlyRef      = useRef<HTMLDivElement>(null);
+  const dailyRef       = useRef<HTMLDivElement>(null);
+  const teamReportRef  = useRef<HTMLDivElement>(null);
+  const driverChartRef = useRef<HTMLDivElement>(null);
+  const driverFileRef  = useRef<HTMLInputElement>(null);
 
-  const fetchAll = useCallback(async (date: string, regions: string[]) => {
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const fetchAll = useCallback(async (date: string, regions: string[], hour: number | null) => {
     setLoading(true);
     setSelectedIds(new Set());
     try {
-      const dateStr    = date    ? `date=${date}`                                    : "";
+      const dateStr    = date              ? `date=${date}`                                        : "";
       const regionsStr = regions.length > 0 ? `regions=${encodeURIComponent(regions.join(","))}` : "";
-      const sep = dateStr && regionsStr ? "&" : "";
+      const hourStr    = hour !== null      ? `hour=${hour}`                                       : "";
+      const parts = [dateStr, regionsStr, hourStr].filter(Boolean);
+      const qs = parts.length ? "?" + parts.join("&") : "";
+      const regQs = regionsStr ? "?" + regionsStr : "";
       const [k, c] = await Promise.all([
-        fetch(`/api/kpis?${dateStr}${sep}${regionsStr}`).then(r => r.json()),
-        fetch(`/api/chart?${regionsStr}`).then(r => r.json()),
+        fetch(`/api/kpis${qs}`).then(r => r.json()),
+        fetch(`/api/chart${regQs}`).then(r => r.json()),
       ]);
       setKpiData(k);
       setChartData(c);
@@ -228,54 +287,11 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     setTableLoading(true);
     setSelectedIds(new Set());
     try {
-      const t = await fetch(`/api/rows?page=${page}&limit=100`).then(r => r.json());
+      const hourStr = selectedHour !== null ? `&hour=${selectedHour}` : "";
+      const t = await fetch(`/api/rows?page=${page}&limit=100${hourStr}`).then(r => r.json());
       setTableData(t);
     } finally { setTableLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    setSelectedDate("");
-    setSelectedRegions([]);
-    fetchAll("", []);
-    fetchTable(0);
-    setTablePage(0);
-  }, [refreshKey, fetchAll, fetchTable]);
-
-  useEffect(() => { fetchTable(tablePage); }, [tablePage, fetchTable]);
-
-  function toggleRegion(region: string) {
-    const next = selectedRegions.includes(region)
-      ? selectedRegions.filter(r => r !== region)
-      : [...selectedRegions, region];
-    setSelectedRegions(next);
-    fetchAll(selectedDate, next);
-  }
-
-  function handleDateChange(date: string) {
-    setSelectedDate(date);
-    fetchAll(date, selectedRegions);
-  }
-
-  async function handleResetConfirmed() {
-    await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
-    setConfirm(null);
-    setSelectedDate(""); setSelectedRegions([]);
-    fetchAll("", []); fetchTable(0); setTablePage(0);
-  }
-
-  async function handleDeleteRowsConfirmed() {
-    await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedIds] }) });
-    setConfirm(null);
-    fetchAll(selectedDate, selectedRegions); fetchTable(tablePage);
-  }
-
-  const bg      = isDark ? "bg-gray-900" : "bg-gray-50";
-  const cardCls = isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200";
-  const textPri = isDark ? "text-gray-100" : "text-gray-800";
-  const textSec = isDark ? "text-gray-400" : "text-gray-500";
-  const grid    = isDark ? "#374151" : "#f0f0f0";
-  const tick    = isDark ? "#9ca3af" : "#6b7280";
-  const tt      = isDark ? { contentStyle: { background:"#1f2937", border:"1px solid #374151", fontSize:12, color:"#f3f4f6" } } : { contentStyle: { fontSize:12 } };
+  }, [selectedHour]);
 
   const fetchTeamReport = useCallback(async () => {
     const p = new URLSearchParams();
@@ -297,17 +313,56 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
 
   const fetchTxHourly = useCallback(async () => {
     const p = new URLSearchParams();
-    const date = selectedDate;
-    if (date) p.set("date", date);
+    if (selectedDate) p.set("date", selectedDate);
     try {
       const r = await fetch("/api/driver-hourly?" + p.toString());
       if (!r.ok) return;
       const data = await r.json();
       setTxHourly(data.hourly || []);
-      setTxByTeam(data.byTeam || {});
-    } catch { /* ignore */ }
+      setTxByRegion(data.byRegion || {});
+    } catch {}
   }, [selectedDate]);
 
+  useEffect(() => {
+    setSelectedDate(""); setSelectedRegions([]); setSelectedHour(null);
+    fetchAll("", [], null); fetchTable(0); setTablePage(0);
+  }, [refreshKey, fetchAll, fetchTable]);
+  useEffect(() => { fetchTable(tablePage); }, [tablePage, fetchTable]);
+  useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
+  useEffect(() => { fetchTxHourly(); }, [fetchTxHourly]);
+  useEffect(() => { fetchDriverInfo(); }, [fetchDriverInfo]);
+
+  function toggleRegion(region: string) {
+    const next = selectedRegions.includes(region)
+      ? selectedRegions.filter(r => r !== region)
+      : [...selectedRegions, region];
+    setSelectedRegions(next);
+    fetchAll(selectedDate, next, selectedHour);
+  }
+  function handleDateChange(date: string) {
+    setSelectedDate(date);
+    fetchAll(date, selectedRegions, selectedHour);
+  }
+  function handleHourChange(h: number | null) {
+    setSelectedHour(h);
+    fetchAll(selectedDate, selectedRegions, h);
+    setTablePage(0);
+  }
+  function toggleHiddenLine(key: string) {
+    setHiddenLines(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+
+  async function handleResetConfirmed() {
+    await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+    setConfirm(null);
+    setSelectedDate(""); setSelectedRegions([]); setSelectedHour(null);
+    fetchAll("", [], null); fetchTable(0); setTablePage(0);
+  }
+  async function handleDeleteRowsConfirmed() {
+    await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedIds] }) });
+    setConfirm(null);
+    fetchAll(selectedDate, selectedRegions, selectedHour); fetchTable(tablePage);
+  }
   const handleDriverFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -335,51 +390,49 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
           String(r[iDepot]||"").trim() === "1032")
         .map(r => ({ sap_id: String(r[iSap]).trim(), doi: String(r[iDoi]||"").trim() }));
       const res = await fetch("/api/drivers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows }),
       });
       const json = await res.json();
       if (json.error) { alert("Lỗi: " + json.error); return; }
-      await fetchDriverInfo();
-      await fetchTeamReport();
+      await fetchDriverInfo(); await fetchTeamReport();
     } catch (err) {
       alert("Lỗi đọc file: " + String(err));
-    } finally {
-      setImportingDrivers(false);
-      e.target.value = "";
-    }
+    } finally { setImportingDrivers(false); e.target.value = ""; }
   }, [fetchDriverInfo, fetchTeamReport]);
 
+  const bg      = isDark ? "bg-gray-900" : "bg-gray-50";
+  const cardCls = isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200";
+  const textPri = isDark ? "text-gray-100" : "text-gray-800";
+  const textSec = isDark ? "text-gray-400" : "text-gray-500";
+  const grid    = isDark ? "#374151" : "#f0f0f0";
+  const tick    = isDark ? "#9ca3af" : "#6b7280";
+  const tt      = isDark ? { contentStyle: { background:"#1f2937", border:"1px solid #374151", fontSize:12, color:"#f3f4f6" } } : { contentStyle: { fontSize:12 } };
+
   const natKPI  = kpiData?.national;
-  const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
-  const [importingDrivers, setImportingDrivers] = useState(false);
-  const [txHourly, setTxHourly] = useState<{hour:string;today:number;d7:number}[]>([]);
-  const [txByTeam, setTxByTeam] = useState<Record<string,{hour:string;count:number}[]>>({});
-  const [showTeamLines, setShowTeamLines] = useState(false);
-  const [driverInfo, setDriverInfo] = useState<{total:number;lastImport:string|null}|null>(null);
-  const driverFileRef = useRef<HTMLInputElement>(null);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(id);
-  }, []);
-  useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
-  useEffect(() => { fetchTxHourly(); }, [fetchTxHourly]);
-  useEffect(() => { fetchDriverInfo(); }, [fetchDriverInfo]);
-  const importTimeStr = formatImportTime(kpiData?.lastImportAt ?? null);
-  const importRelStr = getRelativeStr(kpiData?.lastImportAt ?? null, now);
-  const importIsStale = isImportStale(kpiData?.lastImportAt ?? null, now);
   const isEmpty = !natKPI || natKPI.total === 0;
   const availDates = kpiData?.availableDates ?? [];
   const displayDate = selectedDate || natKPI?.maxDate || "";
   const todayLabel = displayDate ? new Date(displayDate + "T00:00:00").toLocaleDateString("vi-VN") : "";
+  const importTimeStr = formatImportTime(kpiData?.lastImportAt ?? null);
+  const importRelStr = getRelativeStr(kpiData?.lastImportAt ?? null, now);
+  const importIsStale = isImportStale(kpiData?.lastImportAt ?? null, now);
   const todayShort = chartData?.todayDate?.slice(5).replace("-","/") ?? "—";
   const d7Short    = chartData?.d7Date?.slice(5).replace("-","/")    ?? "—";
-
   const visibleRows = tableData?.rows ?? [];
   const allSelected = visibleRows.length > 0 && visibleRows.every(r => selectedIds.has(r.id));
   const totalPages  = tableData ? Math.ceil(tableData.total / tableData.limit) : 0;
+
+  // Driver Active chart data
+  const driverChartData = txHourly.map(h => {
+    const row: Record<string, string|number> = { hour: h.hour, today: h.today, d7: h.d7 };
+    if (showTeamLines) {
+      ALL_REGIONS.forEach(region => {
+        const entry = (txByRegion[region] ?? []).find(x => x.hour === h.hour);
+        row[region] = entry?.count ?? 0;
+      });
+    }
+    return row;
+  });
 
   return (
     <div className={`min-h-screen ${bg}`}>
@@ -394,20 +447,22 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
           onConfirm={handleDeleteRowsConfirmed} onCancel={() => setConfirm(null)} />
       )}
 
-      {/* Header */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className={`sticky top-0 z-20 border-b ${isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"} px-6 py-3 shadow-sm`}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <h1 className={`text-sm font-bold uppercase tracking-wide ${textPri}`}>📊 BÁO CÁO VẬN HÀNH PLATFORM</h1>
             <p className={`text-xs mt-0.5 ${textSec}`}>
-              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}`}
+              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}${selectedHour !== null ? ` · ${String(selectedHour).padStart(2,"0")}:00` : ""}`}
             </p>
             {importTimeStr && (
-              <p className={`text-xs ${importIsStale ? "text-red-500" : (isDark ? "text-gray-500" : "text-gray-400")}`}>Cập nhật lúc: {importTimeStr} {importRelStr}</p>
+              <p className={`text-xs ${importIsStale ? "text-red-500" : (isDark ? "text-gray-500" : "text-gray-400")}`}>
+                Cập nhật lúc: {importTimeStr} {importRelStr}
+              </p>
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Date filter */}
+            {/* Date */}
             {availDates.length > 0 && (
               <select value={selectedDate} onChange={e => handleDateChange(e.target.value)}
                 className={`text-xs px-2 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}>
@@ -416,20 +471,24 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                 ))}
               </select>
             )}
-            {/* Region filter */}
+            {/* Hour */}
+            <select value={selectedHour ?? ""} onChange={e => handleHourChange(e.target.value === "" ? null : parseInt(e.target.value, 10))}
+              className={`text-xs px-2 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}>
+              <option value="">Cả ngày</option>
+              {Array.from({length:24},(_,i) => (
+                <option key={i} value={i}>{String(i).padStart(2,"0")}:00</option>
+              ))}
+            </select>
+            {/* Region */}
             <div className={`flex items-center gap-1 text-xs ${textSec}`}>
               <span>Khu vực:</span>
-              <button onClick={() => { setSelectedRegions([]); fetchAll(selectedDate, []); }}
-                className={`px-2 py-1 rounded border ${selectedRegions.length === 0
-                  ? (isDark ? "bg-blue-600 border-blue-500 text-white" : "bg-blue-600 border-blue-600 text-white")
-                  : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
+              <button onClick={() => { setSelectedRegions([]); fetchAll(selectedDate, [], selectedHour); }}
+                className={`px-2 py-1 rounded border ${selectedRegions.length === 0 ? "bg-blue-600 border-blue-600 text-white" : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
                 Tất cả
               </button>
               {ALL_REGIONS.map(r => (
                 <button key={r} onClick={() => toggleRegion(r)}
-                  className={`px-2 py-1 rounded border ${selectedRegions.includes(r)
-                    ? (isDark ? "bg-blue-600 border-blue-500 text-white" : "bg-blue-600 border-blue-600 text-white")
-                    : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
+                  className={`px-2 py-1 rounded border ${selectedRegions.includes(r) ? "bg-blue-600 border-blue-600 text-white" : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
                   {REGION_EMOJIS[r]} {r}
                 </button>
               ))}
@@ -448,18 +507,11 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             </button>
             <div className="flex items-center gap-1">
               <input ref={driverFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleDriverFile} />
-              <button
-                onClick={() => driverFileRef.current?.click()}
-                disabled={importingDrivers}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-              >
+              <button onClick={() => driverFileRef.current?.click()} disabled={importingDrivers}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
                 {importingDrivers ? "Đang import..." : "Cập nhật ds tx"}
               </button>
-              {driverInfo && (
-                <span className={"text-xs " + (isDark ? "text-gray-400" : "text-gray-500")}>
-                  ({driverInfo.total} tx)
-                </span>
-              )}
+              {driverInfo && <span className={"text-xs " + (isDark ? "text-gray-400" : "text-gray-500")}>({driverInfo.total} tx)</span>}
             </div>
           </div>
         </div>
@@ -477,7 +529,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
       ) : (
         <div className="p-6 space-y-6 w-[90%] mx-auto">
 
-          {/* National KPI */}
+          {/* ── National KPI ─────────────────────────────────────────────── */}
           <div ref={nationalRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -490,7 +542,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             {natKPI && <KPIRow kpi={natKPI} isDark={isDark} />}
           </div>
 
-          {/* Regions */}
+          {/* ── Regions ──────────────────────────────────────────────────── */}
           {(kpiData?.regions.length ?? 0) > 0 && (
             <div ref={regionsRef} className="space-y-4">
               <div className="flex items-center justify-between">
@@ -512,7 +564,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             </div>
           )}
 
-          {/* Hourly chart */}
+          {/* ── GMV Hourly chart ─────────────────────────────────────────── */}
           {chartData && (
             <div ref={hourlyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
               <div className="flex items-center justify-between mb-1">
@@ -530,19 +582,19 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                   <Tooltip {...tt} formatter={(v: number, n: string) => [`${v} Tr`, n]} />
                   <Legend wrapperStyle={{ fontSize:12 }} />
                   <Line type="monotone" dataKey="today" name={`Hôm nay (${todayShort})`} stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
-                <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?v.toFixed(1)+"Tr":""} />
-              </Line>
-                  <Line type="monotone" dataKey="d7"    name={`D-7 (${d7Short})`}          stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
-                <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?v.toFixed(1)+"Tr":""} />
-              </Line>
+                    <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?v.toFixed(1)+"Tr":""} />
+                  </Line>
+                  <Line type="monotone" dataKey="d7" name={`D-7 (${d7Short})`} stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
+                    <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:isDark?"#9ca3af":"#374151" }} formatter={(v:number)=>v>0?v.toFixed(1)+"Tr":""} />
+                  </Line>
                 </LineChart>
               </ResponsiveContainer>
             </div>
           )}
 
-
+          {/* ── Team Report ──────────────────────────────────────────────── */}
           {teamReport.length > 0 && (
-            <div ref={teamReportRef} className={"mt-6 rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
+            <div ref={teamReportRef} className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
                 <ScreenshotBtn targetRef={teamReportRef} isDark={isDark} />
@@ -552,24 +604,18 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                   <thead>
                     <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
                       <th className="px-3 py-2 text-left">Đội</th>
-                      <th className="px-3 py-2 text-right">GMV</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">Driver Act</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">Trip Cpl</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">TpD</th>
-                      <th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">GMV</th><th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">Driver Act</th><th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">Trip Cpl</th><th className="px-3 py-2 text-right">WoW%</th>
+                      <th className="px-3 py-2 text-right">TpD</th><th className="px-3 py-2 text-right">WoW%</th>
                     </tr>
                   </thead>
                   <tbody>
                     {teamReport.map(t => {
                       const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
                       const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
-                      const wGmv = wowPct(t.gmv, t.gmv_prev);
-                      const wDa = wowPct(t.driver_active, t.driver_active_prev);
-                      const wTc = wowPct(t.trip_complete, t.trip_complete_prev);
-                      const wTpd = wowPct(tpd, tpdPrev);
+                      const wGmv = wowPct(t.gmv, t.gmv_prev); const wDa = wowPct(t.driver_active, t.driver_active_prev);
+                      const wTc = wowPct(t.trip_complete, t.trip_complete_prev); const wTpd = wowPct(tpd, tpdPrev);
                       const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
                       const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
                       return (
@@ -592,22 +638,69 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             </div>
           )}
 
-          {/* Driver Active Chart */}
+          {/* ── Driver Active by Hour ─────────────────────────────────────── */}
           {txHourly.length > 0 && (
-            <div className={"rounded-xl border overflow-hidden " + (isDark ? "border-gray-700" : "border-gray-200")}>
-              <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
-                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Driver Active theo giờ</h3>
-                <label className={"flex items-center gap-2 text-xs cursor-pointer " + (isDark ? "text-gray-300" : "text-gray-600")}>
-                  <input type="checkbox" checked={showTeamLines} onChange={e => setShowTeamLines(e.target.checked)} className="rounded" /> Theo đội
-                </label>
+            <div ref={driverChartRef} className={`rounded-xl border overflow-hidden ${cardCls}`}>
+              <div className={`flex items-center justify-between px-4 py-3 ${isDark ? "bg-gray-800" : "bg-gray-50"}`}>
+                <h3 className={`text-sm font-semibold ${textPri}`}>🚗 Driver Active theo giờ</h3>
+                <div className="flex items-center gap-3">
+                  <div className={`flex rounded-lg border overflow-hidden text-xs ${isDark ? "border-gray-600" : "border-gray-300"}`}>
+                    <button onClick={() => { setShowTeamLines(false); setHiddenLines(new Set()); }}
+                      className={`px-3 py-1.5 ${!showTeamLines ? "bg-blue-600 text-white" : (isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100")}`}>
+                      Tổng
+                    </button>
+                    <button onClick={() => { setShowTeamLines(true); setHiddenLines(new Set()); }}
+                      className={`px-3 py-1.5 border-l ${isDark ? "border-gray-600" : "border-gray-300"} ${showTeamLines ? "bg-blue-600 text-white" : (isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100")}`}>
+                      Theo đội
+                    </button>
+                  </div>
+                  <button onClick={async () => {
+                    if (!driverChartRef.current || driverChartBusy) return;
+                    setDriverChartBusy(true);
+                    await downloadPng(driverChartRef.current, isDark, "driver-active.png");
+                    setDriverChartBusy(false);
+                  }} className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isDark ? "border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 bg-gray-900" : "border-gray-300 text-gray-500 hover:text-gray-700 bg-white"}`}>
+                    {driverChartBusy ? "⏳" : "📥"} PNG
+                  </button>
+                </div>
               </div>
-              <div className={"p-4 " + (isDark ? "bg-gray-900" : "bg-white")}>
-                {(()=>{ const teams=Object.keys(txByTeam); const COLORS=["#10b981","#f43f5e","#8b5cf6","#06b6d4","#84cc16","#f97316"]; const tick=isDark?"#9ca3af":"#6b7280"; const hasD7=txHourly.some(h=>h.d7>0); const data=txHourly.map(h=>{ const row:Record<string,string|number>={hour:h.hour,today:h.today,d7:h.d7}; if(showTeamLines) teams.forEach(doi=>{const a=txByTeam[doi].find(x=>x.hour===h.hour);row[doi]=a?a.count:0;}); return row; }); return (<ResponsiveContainer width="100%" height={300}><LineChart data={data} margin={{top:20,right:showTeamLines?50:30,left:0,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke={isDark?"#374151":"#e5e7eb"} /><XAxis dataKey="hour" tick={{fill:tick,fontSize:11}} tickFormatter={h=>h+"h"} /><YAxis yAxisId="left" tick={{fill:tick,fontSize:11}} />{showTeamLines&&<YAxis yAxisId="right" orientation="right" tick={{fill:tick,fontSize:11}} />}<Tooltip contentStyle={{background:isDark?"#1f2937":"#fff",border:"1px solid "+(isDark?"#374151":"#e5e7eb"),borderRadius:8,fontSize:12}} labelFormatter={h=>"Giờ "+h} /><Legend wrapperStyle={{fontSize:12}} /><Line yAxisId="left" type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} activeDot={{r:5}}><LabelList dataKey="today" position="top" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>{hasD7&&<Line yAxisId="left" type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{r:2}} activeDot={{r:4}}><LabelList dataKey="d7" position="bottom" style={{fontSize:9,fill:tick}} formatter={(v:number)=>v>0?String(v):""} /></Line>}{showTeamLines&&teams.map((doi,i)=>(<Line yAxisId="right" key={doi} type="monotone" dataKey={doi} name={doi} stroke={COLORS[i%COLORS.length]} strokeWidth={1.5} dot={{r:2}} />))}</LineChart></ResponsiveContainer>); })()}
+              <div className={`p-4 ${isDark ? "bg-gray-900" : "bg-white"}`}>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={driverChartData} margin={{ top:20, right:30, left:0, bottom:0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={grid} />
+                    <XAxis dataKey="hour" tick={{ fill:tick, fontSize:11 }} tickFormatter={h => h+"h"} />
+                    <YAxis tick={{ fill:tick, fontSize:11 }} />
+                    <Tooltip contentStyle={{ background:isDark?"#1f2937":"#fff", border:"1px solid "+(isDark?"#374151":"#e5e7eb"), borderRadius:8, fontSize:12 }}
+                      labelFormatter={h => "Giờ " + h} />
+                    <Legend wrapperStyle={{ fontSize:12, cursor: showTeamLines ? "pointer" : "default" }}
+                      onClick={showTeamLines ? (e: {dataKey?: string}) => { if (e.dataKey) toggleHiddenLine(e.dataKey); } : undefined} />
+                    {!showTeamLines && <>
+                      <Line type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
+                        <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
+                      </Line>
+                      {txHourly.some(h=>h.d7>0) && (
+                        <Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
+                          <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
+                        </Line>
+                      )}
+                    </>}
+                    {showTeamLines && ALL_REGIONS.map((region, i) => (
+                      <Line key={region} type="monotone" dataKey={region} name={`${REGION_EMOJIS[region]} ${region}`}
+                        stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2}
+                        dot={{ r:3 }} activeDot={{ r:5 }}
+                        hide={hiddenLines.has(region)}
+                        strokeOpacity={hiddenLines.has(region) ? 0.2 : 1} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+                {showTeamLines && (
+                  <p className={`text-xs mt-1 text-center ${textSec}`}>Click tên trên legend để bật/tắt đường</p>
+                )}
               </div>
             </div>
           )}
 
-          {/* Daily chart */}
+          {/* ── Daily chart ──────────────────────────────────────────────── */}
           {chartData && (
             <div ref={dailyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
               <div className="flex items-center justify-between mb-4">
@@ -629,7 +722,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
             </div>
           )}
 
-          {/* Table */}
+          {/* ── Table ────────────────────────────────────────────────────── */}
           <div className={`rounded-xl border shadow-sm overflow-hidden ${cardCls}`}>
             <div className={`px-4 py-2 border-b flex items-center justify-between gap-3 flex-wrap ${isDark ? "bg-gray-900 border-gray-700" : "bg-gray-50 border-gray-100"}`}>
               <span className={`text-xs ${textSec}`}>
