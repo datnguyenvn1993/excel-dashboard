@@ -726,12 +726,12 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                       </Line>
                     ))}
                     {showTeamLines && teamNames.map((team, i) => (
-                      <Line key={team + "_d7"} type="monotone" dataKey={team + "_d7"} name={team + " (D-7)"}
+                      <Line key={team + "_d7"} type="monotone" dataKey={team + "_d7"} name={team + " (D-7)"} legendType="none"
                         stroke={TEAM_COLORS[i % TEAM_COLORS.length]} strokeWidth={2} strokeDasharray="4 2"
                         dot={{ r: 2 }} activeDot={{ r: 4 }}
-                        hide={hiddenLines.has(team + "_d7")}
-                        strokeOpacity={hiddenLines.has(team + "_d7") ? 0.2 : 0.6}>
-                        {!hiddenLines.has(team + "_d7") && <LabelList dataKey={team + "_d7"} position="bottom" style={{ fontSize: 8, fill: TEAM_COLORS[i % TEAM_COLORS.length] }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
+                        hide={hiddenLines.has(team)}
+                        strokeOpacity={hiddenLines.has(team) ? 0.2 : 0.6}>
+                        {!hiddenLines.has(team) && <LabelList dataKey={team + "_d7"} position="bottom" style={{ fontSize: 8, fill: TEAM_COLORS[i % TEAM_COLORS.length] }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
                       </Line>
                     ))}
                   </LineChart>
