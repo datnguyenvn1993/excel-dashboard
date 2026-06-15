@@ -27,10 +27,16 @@ export async function GET(req: NextRequest) {
 
     const [hourlyRes, dailyRes] = await Promise.all([
       client.query(
-        `SELECT create_date::text, create_hour, SUM(total_pay)::float as gmv
-         FROM orders
-         WHERE create_date IN ($1::date, $2::date) AND create_hour IS NOT NULL
-         ${cityFilterSql}
+        `WITH deduped AS (
+           SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
+             create_date, create_hour, total_pay, pickup_city
+           FROM orders
+           WHERE create_date IN ($1::date, $2::date) AND create_hour IS NOT NULL
+           ${cityFilterSql}
+           ORDER BY COALESCE(NULLIF(order_id,''), id::text)
+         )
+         SELECT create_date::text, create_hour, SUM(total_pay)::float as gmv
+         FROM deduped
          GROUP BY create_date, create_hour ORDER BY create_date, create_hour`,
         [maxDate, d7Str]
       ),
