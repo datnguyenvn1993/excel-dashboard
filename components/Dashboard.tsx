@@ -248,6 +248,9 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   const [now, setNow] = useState(() => Date.now());
   const [driverChartBusy, setDriverChartBusy] = useState(false);
 
+  // Ref so fetchTable stays stable (not recreated when hour changes)
+  const selectedHourRef = useRef<number | null>(null);
+
   const nationalRef    = useRef<HTMLDivElement>(null);
   const regionsRef     = useRef<HTMLDivElement>(null);
   const hourlyRef      = useRef<HTMLDivElement>(null);
@@ -283,19 +286,22 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     } finally { setLoading(false); }
   }, []);
 
+  // fetchTable uses ref so it stays stable and doesn't trigger the reset useEffect
   const fetchTable = useCallback(async (page: number) => {
     setTableLoading(true);
     setSelectedIds(new Set());
     try {
-      const hourStr = selectedHour !== null ? `&hour=${selectedHour}` : "";
+      const h = selectedHourRef.current;
+      const hourStr = h !== null ? `&hour=${h}` : "";
       const t = await fetch(`/api/rows?page=${page}&limit=100${hourStr}`).then(r => r.json());
       setTableData(t);
     } finally { setTableLoading(false); }
-  }, [selectedHour]);
+  }, []); // stable — no selectedHour dep
 
   const fetchTeamReport = useCallback(async () => {
     const p = new URLSearchParams();
     if (selectedDate) p.set("date", selectedDate);
+    if (selectedHourRef.current !== null) p.set("hour", String(selectedHourRef.current));
     try {
       const r = await fetch("/api/team-report?" + p.toString());
       const d = await r.json();
@@ -324,9 +330,10 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   }, [selectedDate]);
 
   useEffect(() => {
+    selectedHourRef.current = null;
     setSelectedDate(""); setSelectedRegions([]); setSelectedHour(null);
     fetchAll("", [], null); fetchTable(0); setTablePage(0);
-  }, [refreshKey, fetchAll, fetchTable]);
+  }, [refreshKey, fetchAll, fetchTable]); // fetchTable is now stable — won't re-fire on hour change
   useEffect(() => { fetchTable(tablePage); }, [tablePage, fetchTable]);
   useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
   useEffect(() => { fetchTxHourly(); }, [fetchTxHourly]);
@@ -344,8 +351,11 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     fetchAll(date, selectedRegions, selectedHour);
   }
   function handleHourChange(h: number | null) {
+    selectedHourRef.current = h; // update ref synchronously BEFORE any fetch
     setSelectedHour(h);
     fetchAll(selectedDate, selectedRegions, h);
+    fetchTable(0); // re-fetch table with new hour (ref already updated)
+    fetchTeamReport(); // re-fetch team report with new hour
     setTablePage(0);
   }
   function toggleHiddenLine(key: string) {
@@ -355,6 +365,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
   async function handleResetConfirmed() {
     await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
     setConfirm(null);
+    selectedHourRef.current = null;
     setSelectedDate(""); setSelectedRegions([]); setSelectedHour(null);
     fetchAll("", [], null); fetchTable(0); setTablePage(0);
   }
