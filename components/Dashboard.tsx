@@ -706,8 +706,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                         <LabelList dataKey="today" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />
                       </Line>
                     )}
-                    {!showTeamLines && hasD7Data && (
-                      <Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 2 }} activeDot={{ r: 4 }}>
+                    {hasD7Data && (
+                      <Line type="monotone" dataKey="d7" name="Tổng D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 2 }} activeDot={{ r: 4 }}>
                         <LabelList dataKey="d7" position="bottom" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />
                       </Line>
                     )}
