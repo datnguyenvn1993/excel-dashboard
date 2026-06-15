@@ -43,6 +43,6 @@ export function buildRegionSql(col: string): string {
 
 export function parseRegions(param: string | null): string[] {
   if (!param) return [];
-  const valid = new Set(REGION_ORDER);
+  const valid = new Set<string>(REGION_ORDER);
   return param.split(",").map(r => r.trim()).filter(r => valid.has(r));
 }
