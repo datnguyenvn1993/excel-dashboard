@@ -34,6 +34,7 @@ interface TableData { rows: TableRow[]; total: number; page: number; limit: numb
 type ConfirmState = { type: "reset" } | { type: "deleteRows"; count: number } | null;
 
 const ALL_REGIONS = ["Hồ Chí Minh", "Hà Nội", "Miền Nam", "Miền Bắc"] as const;
+const REGION_ORDER = ["Hồ Chí Minh", "Hà Nội", "Miền Nam", "Miền Bắc"];
 const REGION_EMOJIS: Record<string, string> = {
   "Hồ Chí Minh": "🏙️", "Hà Nội": "🏛️", "Miền Nam": "🌴", "Miền Bắc": "⛰️",
 };
