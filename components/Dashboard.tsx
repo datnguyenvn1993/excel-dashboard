@@ -110,7 +110,7 @@ async function captureToClipboard(el: HTMLElement, isDark: boolean, o?: { waterm
       ctx.save();
       ctx.globalAlpha = 0.5;
       ctx.font = "bold 34px sans-serif";
-      ctx.fillStyle = isDark ? "#9ca3af" : "#6b7280";
+      ctx.fillStyle = isDark ? "#d1d5db" : "#6b7280";
       ctx.textAlign = "right";
       ctx.textBaseline = "top";
       ctx.fillText(o.watermarkText, canvas.width - 20, 20);
@@ -150,7 +150,7 @@ async function downloadPng(el: HTMLElement, isDark: boolean, filename: string) {
 function ScreenshotBtn({ targetRef, isDark, watermarkText }: { targetRef: React.RefObject<HTMLDivElement | null>; isDark: boolean; watermarkText?: string }) {
   const [st, setSt] = useState<"idle" | "busy" | "done">("idle");
   return (
-    <button onClick={async () => {
+    <button data-html2canvas-ignore="true" onClick={async () => {
       if (!targetRef.current || st === "busy") return;
       setSt("busy"); await captureToClipboard(targetRef.current, isDark, { watermarkText }); setSt("done"); setTimeout(() => setSt("idle"), 2000);
     }} className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isDark ? "border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 bg-gray-900" : "border-gray-300 text-gray-500 hover:text-gray-700 bg-white"}`}>
