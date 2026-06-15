@@ -444,6 +444,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
     }
     return row;
   });
+  const hasD7Data = txHourly.some(h => h.d7 > 0);
 
   return (
     <div className={`min-h-screen ${bg}`}>
@@ -685,17 +686,18 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                       labelFormatter={h => "Giờ " + h} />
                     <Legend wrapperStyle={{ fontSize:12, cursor: showTeamLines ? "pointer" : "default" }}
                       onClick={showTeamLines ? (data: any) => { if (data.dataKey) toggleHiddenLine(String(data.dataKey)); } : undefined} />
-                    {!showTeamLines && <>
-                      <Line type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
+                            {/* FIX: no fragment wrapper — Recharts needs Line as direct child, not inside React fragment */}
+                    {!showTeamLines && (
+                      <Line type="monotone" dataKey="today" name="H\u00f4m nay" stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
                         <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
                       </Line>
-                      {txHourly.some(h=>h.d7>0) && (
-                        <Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
-                          <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
-                        </Line>
-                      )}
-                    </>}
-                    {showTeamLines && ALL_REGIONS.map((region, i) => (
+                    )}
+                    {!showTeamLines && hasD7Data && (
+                      <Line type="monotone" dataKey="d7" name="D-7" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" dot={{ r:2 }} activeDot={{ r:4 }}>
+                        <LabelList dataKey="d7" position="bottom" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
+                      </Line>
+                    )}
+map((region, i) => (
                       <Line key={region} type="monotone" dataKey={region} name={`${REGION_EMOJIS[region]} ${region}`}
                         stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2}
                         dot={{ r:3 }} activeDot={{ r:5 }}
