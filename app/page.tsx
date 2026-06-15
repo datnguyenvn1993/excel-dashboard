@@ -6,6 +6,7 @@ import { Upload } from "lucide-react";
 
 export default function Home() {
   const [showModal, setShowModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<{ username: string, role: string, display_name: string } | null>(null);
   const [loadingMsg, setLoadingMsg] = useState("Đang kiểm tra phiên làm việc...");
@@ -57,6 +58,11 @@ export default function Home() {
               <span className="font-medium text-white">{user.display_name || user.username}</span>
               <span className="text-xs opacity-70 capitalize text-cyan-200">{user.role}</span>
             </div>
+
+            <button onClick={() => setShowPasswordModal(true)}
+              className="text-sm bg-cyan-700 hover:bg-cyan-600 text-cyan-50 px-3 py-1.5 rounded-lg transition-colors font-medium">
+              Đổi mật khẩu
+            </button>
             <button onClick={handleLogout}
               className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition-colors mr-3 font-medium">
               Đăng xuất
@@ -72,6 +78,42 @@ export default function Home() {
       <main className="w-full">
         <Dashboard onImportNew={() => setShowModal(true)} refreshKey={refreshKey} currentUser={user} />
       </main>
+
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="border rounded-2xl w-full max-w-sm shadow-2xl p-6 bg-slate-900 border-slate-700 text-white">
+            <h3 className="text-lg font-bold mb-4 text-white">Đổi mật khẩu</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const p1 = f.get('currentPassword') as string;
+              const p2 = f.get('newPassword') as string;
+              try {
+                const res = await fetch('/api/auth/change-password', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ currentPassword: p1, newPassword: p2 })
+                });
+                const d = await res.json();
+                if (!res.ok) alert("Lỗi: " + (d.error || "Không thể đổi pass"));
+                else { alert("Đổi thành công!"); setShowPasswordModal(false); }
+              } catch { alert("Lỗi mạng"); }
+            }}>
+              <div className="mb-4">
+                <label className="block text-sm mb-1 text-slate-300">Mật khẩu hiện tại</label>
+                <input name="currentPassword" type="password" required className="w-full border rounded px-3 py-2 bg-slate-800 border-slate-700 text-white placeholder-slate-400" />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm mb-1 text-slate-300">Mật khẩu mới</label>
+                <input name="newPassword" type="password" required className="w-full border rounded px-3 py-2 bg-slate-800 border-slate-700 text-white placeholder-slate-400" />
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <button type="button" onClick={() => setShowPasswordModal(false)} className="px-4 py-2 border rounded border-slate-700 hover:bg-slate-800 text-slate-300">Hủy</button>
+                <button type="submit" className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium">Xác nhận</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"

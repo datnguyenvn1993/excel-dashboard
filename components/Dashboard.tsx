@@ -265,7 +265,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{ total: number; lastImport: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const watermarkText = currentUser ? (currentUser.display_name || currentUser.username) : undefined;
 
   // Ref so fetchTable stays stable (not recreated when hour changes)
@@ -829,42 +828,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
         </div>
       )}
 
-      {/* ── Password Modal ────────────────────────────────────────────────────── */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className={`border rounded-2xl w-full max-w-sm shadow-2xl p-6 ${isDark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`}>
-            <h3 className="text-lg font-bold mb-4">Đổi mật khẩu</h3>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              const p1 = f.get('currentPassword') as string;
-              const p2 = f.get('newPassword') as string;
-              try {
-                const res = await fetch('/api/auth/change-password', {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ currentPassword: p1, newPassword: p2 })
-                });
-                const d = await res.json();
-                if (!res.ok) alert("Lỗi: " + (d.error || "Không thể đổi pass"));
-                else { alert("Đổi thành công!"); setShowPasswordModal(false); }
-              } catch { alert("Lỗi mạng"); }
-            }}>
-              <div className="mb-4">
-                <label className="block text-sm mb-1 opacity-80">Mật khẩu hiện tại</label>
-                <input name="currentPassword" type="password" required className={`w-full border rounded px-3 py-2 ${isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-300"}`} />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm mb-1 opacity-80">Mật khẩu mới</label>
-                <input name="newPassword" type="password" required className={`w-full border rounded px-3 py-2 ${isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-300"}`} />
-              </div>
-              <div className="flex justify-end gap-2 mt-2">
-                <button type="button" onClick={() => setShowPasswordModal(false)} className={`px-4 py-2 border rounded ${isDark ? "border-gray-700 hover:bg-gray-800" : "border-gray-300 hover:bg-gray-50"}`}>Hủy</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded">Xác nhận</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
