@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     d7Obj.setUTCDate(d7Obj.getUTCDate() - 7);
     const d7DateStr = d7Obj.toISOString().slice(0, 10);
 
-    const [todayRes, d7HourRes, byTeamRes] = await Promise.all([
+    const [todayRes, d7HourRes, byTeamRes, byTeamD7Res] = await Promise.all([
       client.query(`
         SELECT create_hour::text as hour,
                COUNT(DISTINCT TRIM(COALESCE(sap_profile_id,''))) as cnt
@@ -44,6 +44,16 @@ export async function GET(req: NextRequest) {
           AND TRIM(COALESCE(o.sap_profile_id,'')) != ''
         GROUP BY d.doi, o.create_hour ORDER BY d.doi, o.create_hour::int
       `, [maxDate]),
+      client.query(`
+        SELECT d.doi,
+               o.create_hour::text as hour,
+               COUNT(DISTINCT TRIM(COALESCE(o.sap_profile_id,''))) as cnt
+        FROM orders o
+        JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
+        WHERE o.create_date::text = $1
+          AND TRIM(COALESCE(o.sap_profile_id,'')) != ''
+        GROUP BY d.doi, o.create_hour ORDER BY d.doi, o.create_hour::int
+      `, [d7DateStr]),
     ]);
 
     const todayMap: Record<string, number> = {};
@@ -58,7 +68,9 @@ export async function GET(req: NextRequest) {
     }));
 
     const byTeam: Record<string, { hour: string; count: number }[]> = {};
+    const byTeamD7: Record<string, { hour: string; count: number }[]> = {};
     const teamSet = new Set<string>();
+
     byTeamRes.rows.forEach((r: { doi: string; hour: string; cnt: string }) => {
       if (!r.doi) return;
       teamSet.add(r.doi);
@@ -66,7 +78,14 @@ export async function GET(req: NextRequest) {
       byTeam[r.doi].push({ hour: r.hour, count: Number(r.cnt) });
     });
 
-    return NextResponse.json({ hourly, byTeam, teams: [...teamSet].sort(), maxDate, d7Date: d7DateStr });
+    byTeamD7Res.rows.forEach((r: { doi: string; hour: string; cnt: string }) => {
+      if (!r.doi) return;
+      teamSet.add(r.doi);
+      if (!byTeamD7[r.doi]) byTeamD7[r.doi] = [];
+      byTeamD7[r.doi].push({ hour: r.hour, count: Number(r.cnt) });
+    });
+
+    return NextResponse.json({ hourly, byTeam, byTeamD7, teams: [...teamSet].sort(), maxDate, d7Date: d7DateStr });
   } catch (e) {
     console.error("driver-hourly error:", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });

@@ -260,6 +260,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const [importingDrivers, setImportingDrivers] = useState(false);
   const [txHourly, setTxHourly] = useState<{ hour: string; today: number; d7: number }[]>([]);
   const [txByTeam, setTxByTeam] = useState<Record<string, { hour: string; count: number }[]>>({});
+  const [txByTeamD7, setTxByTeamD7] = useState<Record<string, { hour: string; count: number }[]>>({});
   const [teamNames, setTeamNames] = useState<string[]>([]);
   const [showTeamLines, setShowTeamLines] = useState(false);
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
@@ -345,6 +346,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
       const data = await r.json();
       setTxHourly(data.hourly || []);
       setTxByTeam(data.byTeam || {});
+      setTxByTeamD7(data.byTeamD7 || {});
       setTeamNames(data.teams || []);
     } catch { }
   }, [selectedDate]);
@@ -461,6 +463,9 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
       teamNames.forEach(team => {
         const entry = (txByTeam[team] ?? []).find(x => x.hour === h.hour);
         row[team] = entry?.count ?? 0;
+
+        const entryD7 = (txByTeamD7[team] ?? []).find(x => x.hour === h.hour);
+        row[team + "_d7"] = entryD7?.count ?? 0;
       });
     }
     return row;
@@ -713,11 +718,20 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                     )}
                     {showTeamLines && teamNames.map((team, i) => (
                       <Line key={team} type="monotone" dataKey={team} name={team}
-                        stroke={TEAM_COLORS[i % TEAM_COLORS.length]} strokeWidth={2}
+                        stroke={TEAM_COLORS[i % TEAM_COLORS.length]} strokeWidth={2.5}
                         dot={{ r: 3 }} activeDot={{ r: 5 }}
                         hide={hiddenLines.has(team)}
                         strokeOpacity={hiddenLines.has(team) ? 0.2 : 1}>
                         {!hiddenLines.has(team) && <LabelList dataKey={team} position="top" style={{ fontSize: 8, fill: TEAM_COLORS[i % TEAM_COLORS.length] }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
+                      </Line>
+                    ))}
+                    {showTeamLines && teamNames.map((team, i) => (
+                      <Line key={team + "_d7"} type="monotone" dataKey={team + "_d7"} name={team + " (D-7)"}
+                        stroke={TEAM_COLORS[i % TEAM_COLORS.length]} strokeWidth={2} strokeDasharray="4 2"
+                        dot={{ r: 2 }} activeDot={{ r: 4 }}
+                        hide={hiddenLines.has(team + "_d7")}
+                        strokeOpacity={hiddenLines.has(team + "_d7") ? 0.2 : 0.6}>
+                        {!hiddenLines.has(team + "_d7") && <LabelList dataKey={team + "_d7"} position="bottom" style={{ fontSize: 8, fill: TEAM_COLORS[i % TEAM_COLORS.length] }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
                       </Line>
                     ))}
                   </LineChart>
