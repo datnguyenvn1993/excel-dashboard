@@ -673,7 +673,7 @@ export default function Dashboard({ onImportNew, refreshKey }: DashboardProps) {
                     <Tooltip contentStyle={{ background:isDark?"#1f2937":"#fff", border:"1px solid "+(isDark?"#374151":"#e5e7eb"), borderRadius:8, fontSize:12 }}
                       labelFormatter={h => "Giờ " + h} />
                     <Legend wrapperStyle={{ fontSize:12, cursor: showTeamLines ? "pointer" : "default" }}
-                      onClick={showTeamLines ? (e: {dataKey?: string}) => { if (e.dataKey) toggleHiddenLine(e.dataKey); } : undefined} />
+                      onClick={showTeamLines ? (data: any) => { if (data.dataKey) toggleHiddenLine(String(data.dataKey)); } : undefined} />
                     {!showTeamLines && <>
                       <Line type="monotone" dataKey="today" name="Hôm nay" stroke="#3b82f6" strokeWidth={2.5} dot={{ r:3 }} activeDot={{ r:5 }}>
                         <LabelList dataKey="today" position="top" style={{ fontSize:9, fill:tick }} formatter={(v:number)=>v>0?String(v):""} />
