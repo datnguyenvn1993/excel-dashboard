@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, initDB } from "@/lib/db";
 import { verifyPassword, createToken } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -8,6 +8,9 @@ export async function POST(req: NextRequest) {
         if (!username || !password) {
             return NextResponse.json({ error: "Missing username or password" }, { status: 400 });
         }
+
+        // Ensure database tables exist and admin is seeded
+        await initDB();
 
         const client = await db.connect();
         let user;
