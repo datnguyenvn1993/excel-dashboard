@@ -29,12 +29,10 @@ export const REGIONS: Record<string, string[]> = {
 export const REGION_ORDER = ["Hồ Chí Minh", "Hà Nội", "Miền Nam", "Miền Bắc"] as const;
 export type RegionName = typeof REGION_ORDER[number];
 
-/** All cities for the given region names */
 export function citiesForRegions(names: string[]): string[] {
   return names.flatMap(n => REGIONS[n] ?? []);
 }
 
-/** Build SQL CASE expression: pickup_city → region name (NULL if unknown) */
 export function buildRegionSql(col: string): string {
   const cases = Object.entries(REGIONS).map(([region, cities]) => {
     const list = cities.map(c => `'${c.toLowerCase().replace(/'/g, "''").trim()}'`).join(", ");
@@ -43,9 +41,8 @@ export function buildRegionSql(col: string): string {
   return `CASE \n  ${cases.join("\n  ")}\n  ELSE NULL\nEND`;
 }
 
-/** Safe region names only (validated against known list) */
 export function parseRegions(param: string | null): string[] {
   if (!param) return [];
-  const valid = new Set<string>(REGION_ORDER);
+  const valid = new Set(REGION_ORDER);
   return param.split(",").map(r => r.trim()).filter(r => valid.has(r));
 }
