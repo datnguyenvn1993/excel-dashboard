@@ -108,10 +108,10 @@ async function captureToClipboard(el: HTMLElement, isDark: boolean, o?: { waterm
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.save();
-      ctx.globalAlpha = 0.18;
+      ctx.globalAlpha = 0.35;
       const fontSize = Math.max(40, Math.round(canvas.width / 10));
       ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.fillStyle = isDark ? "#d1d5db" : "#374151";
+      ctx.fillStyle = isDark ? "#93c5fd" : "#dc2626";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.translate(canvas.width / 2, canvas.height / 2);
