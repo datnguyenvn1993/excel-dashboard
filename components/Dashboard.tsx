@@ -711,6 +711,35 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                         </tr>
                       );
                     })}
+                    {(() => {
+                      const targets = teamReport.filter((t: any) => t.doi && t.doi.startsWith("PLF.HCM.DOIXE"));
+                      if (targets.length === 0) return null;
+                      let gmv = 0, gmv_prev = 0, driver_active = 0, driver_active_prev = 0, trip_complete = 0, trip_complete_prev = 0;
+                      for (const t of targets) {
+                        gmv += t.gmv || 0; gmv_prev += t.gmv_prev || 0;
+                        driver_active += t.driver_active || 0; driver_active_prev += t.driver_active_prev || 0;
+                        trip_complete += t.trip_complete || 0; trip_complete_prev += t.trip_complete_prev || 0;
+                      }
+                      const tpd = driver_active > 0 ? trip_complete / driver_active : 0;
+                      const tpdPrev = driver_active_prev > 0 ? trip_complete_prev / driver_active_prev : null;
+                      const wGmv = wowPct(gmv, gmv_prev); const wDa = wowPct(driver_active, driver_active_prev);
+                      const wTc = wowPct(trip_complete, trip_complete_prev); const wTpd = wowPct(tpd, tpdPrev);
+                      const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+                      const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
+                      return (
+                        <tr className={"border-t-2 border-dashed " + (isDark ? "border-gray-500 bg-gray-800" : "border-gray-300 bg-gray-50")}>
+                          <td className={"px-3 py-2 font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Platform HCM</td>
+                          <td className="px-3 py-2 text-right font-bold">{(gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{driver_active}</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{trip_complete}</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                        </tr>
+                      );
+                    })()}
                   </tbody>
                 </table>
               </div>
