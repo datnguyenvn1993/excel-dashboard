@@ -657,7 +657,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
           )}
 
           {/* ── Team Report ──────────────────────────────────────────────── */}
-          {teamReport.length > 0 && (
+          <div className="mt-6">
             <div ref={teamReportRef} className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
@@ -715,7 +715,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                 </table>
               </div>
             </div>
-          )}
+          </div>
 
           {/* ── Driver Active by Hour ─────────────────────────────────────── */}
           {txHourly.length > 0 && (
