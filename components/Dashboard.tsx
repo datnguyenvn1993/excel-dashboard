@@ -295,10 +295,11 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
       const hourStr = hour !== null ? `hour=${hour}` : "";
       const parts = [dateStr, regionsStr, hourStr].filter(Boolean);
       const qs = parts.length ? "?" + parts.join("&") : "";
-      const regQs = regionsStr ? "?" + regionsStr : "";
+      const chartParts = [dateStr, regionsStr].filter(Boolean);
+      const chartQs = chartParts.length ? "?" + chartParts.join("&") : "";
       const [k, c] = await Promise.all([
         fetch(`/api/kpis${qs}`).then(r => r.json()),
-        fetch(`/api/chart${regQs}`).then(r => r.json()),
+        fetch(`/api/chart${chartQs}`).then(r => r.json()),
       ]);
       setKpiData(k);
       setChartData(c);
@@ -629,7 +630,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
             <div ref={hourlyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
               <div className="flex items-center justify-between mb-1">
                 <h3 className={`font-semibold text-sm ${textPri}`}>
-                  📈 GMV theo giờ — <span className="text-blue-500">Hôm nay ({todayShort})</span> vs <span className={textSec}>D-7 ({d7Short})</span>
+                  📈 GMV theo giờ — <span className="text-blue-500">{selectedDate ? "Ngày lọc" : "Hôm nay"} ({todayShort})</span> vs <span className={textSec}>D-7 ({d7Short})</span>
                 </h3>
                 <ScreenshotBtn targetRef={hourlyRef} isDark={isDark} watermarkText={watermarkText} />
               </div>

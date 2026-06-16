@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
   await initDB();
   const client = await db.connect();
   try {
-    const dateExpr = dateParam ? "$1::date" : "(SELECT MAX(create_date) FROM orders)";
-    const prevExpr = dateParam ? "($1::date - INTERVAL '7 days')" : "((SELECT MAX(create_date) FROM orders) - INTERVAL '7 days')";
+    const dateExpr = dateParam ? "$1::text" : "(SELECT MAX(create_date) FROM orders)";
+    const prevExpr = dateParam ? "to_char($1::date - 7, 'YYYY-MM-DD')" : "to_char((SELECT MAX(create_date) FROM orders)::date - 7, 'YYYY-MM-DD')";
     const hourFilterSql = hour !== null ? `AND o.create_hour = ${hour}` : "";
     const args = dateParam ? [dateParam] : [];
     const sql = `
