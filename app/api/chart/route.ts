@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
   const client = await db.connect();
   try {
     const maxRes = await client.query(`SELECT MAX(create_date)::text as max_date FROM orders`);
-    const maxDate: string | null = maxRes.rows[0]?.max_date ?? null;
+    const dateParam = searchParams.get("date");
+    const maxDate: string | null = dateParam || (maxRes.rows[0]?.max_date ?? null);
 
     if (!maxDate) {
       return NextResponse.json({ hourly: [], daily: [], todayDate: null, d7Date: null });

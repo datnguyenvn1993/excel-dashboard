@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -257,6 +257,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
+  const [teamSortCol, setTeamSortCol] = useState<string>("gmv");
+  const [teamSortDir, setTeamSortDir] = useState<"asc" | "desc">("desc");
   const [importingDrivers, setImportingDrivers] = useState(false);
   const [txHourly, setTxHourly] = useState<{ hour: string; today: number; d7: number }[]>([]);
   const [txByTeam, setTxByTeam] = useState<Record<string, { hour: string; count: number }[]>>({});
@@ -455,6 +457,26 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const allSelected = visibleRows.length > 0 && visibleRows.every(r => selectedIds.has(r.id));
   const totalPages = tableData ? Math.ceil(tableData.total / tableData.limit) : 0;
 
+  const sortedTeamReport = useMemo(() => {
+    return [...teamReport].map(t => {
+      const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
+      const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
+      return {
+        ...t, tpd,
+        wGmv: wowPct(t.gmv, t.gmv_prev),
+        wDa: wowPct(t.driver_active, t.driver_active_prev),
+        wTc: wowPct(t.trip_complete, t.trip_complete_prev),
+        wTpd: wowPct(tpd, tpdPrev)
+      };
+    }).sort((a, b) => {
+      let v1: any = a[teamSortCol as keyof typeof a];
+      let v2: any = b[teamSortCol as keyof typeof b];
+      if (typeof v1 === "string") return teamSortDir === "asc" ? v1.localeCompare(v2) : v2.localeCompare(v1);
+      v1 = v1 ?? -Infinity; v2 = v2 ?? -Infinity;
+      return teamSortDir === "asc" ? v1 - v2 : v2 - v1;
+    });
+  }, [teamReport, teamSortCol, teamSortDir]);
+
   // Driver Active chart data
   const TEAM_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16", "#06b6d4", "#d946ef", "#0ea5e9", "#a855f7", "#22c55e", "#e11d48", "#facc15", "#2dd4bf", "#fb923c", "#818cf8"];
   const driverChartData = txHourly.map(h => {
@@ -641,19 +663,34 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                 <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
                   <thead>
                     <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
-                      <th className="px-3 py-2 text-left">Đội</th>
-                      <th className="px-3 py-2 text-right">GMV</th><th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">Driver Act</th><th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">Trip Cpl</th><th className="px-3 py-2 text-right">WoW%</th>
-                      <th className="px-3 py-2 text-right">TpD</th><th className="px-3 py-2 text-right">WoW%</th>
+                      {(() => {
+                        const th = (key: string, label: string, align: string) => {
+                          const dir = teamSortCol === key ? teamSortDir : null;
+                          return (
+                            <th key={key} className={`px-3 py-2 text-${align} cursor-pointer select-none hover:${isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}
+                              onClick={() => {
+                                if (teamSortCol === key) setTeamSortDir(d => d === "asc" ? "desc" : "asc");
+                                else { setTeamSortCol(key); setTeamSortDir("desc"); }
+                              }}>
+                              {label} {dir === "asc" ? "↑" : dir === "desc" ? "↓" : <span className="opacity-0">↕</span>}
+                            </th>
+                          );
+                        };
+                        return (
+                          <>
+                            {th("doi", "Đội", "left")}
+                            {th("gmv", "GMV", "right")} {th("wGmv", "WoW%", "right")}
+                            {th("driver_active", "Driver Act", "right")} {th("wDa", "WoW%", "right")}
+                            {th("trip_complete", "Trip Cpl", "right")} {th("wTc", "WoW%", "right")}
+                            {th("tpd", "TpD", "right")} {th("wTpd", "WoW%", "right")}
+                          </>
+                        );
+                      })()}
                     </tr>
                   </thead>
                   <tbody>
-                    {teamReport.map(t => {
-                      const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
-                      const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
-                      const wGmv = wowPct(t.gmv, t.gmv_prev); const wDa = wowPct(t.driver_active, t.driver_active_prev);
-                      const wTc = wowPct(t.trip_complete, t.trip_complete_prev); const wTpd = wowPct(tpd, tpdPrev);
+                    {sortedTeamReport.map((t: any) => {
+                      const { wGmv, wDa, wTc, wTpd, tpd } = t;
                       const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
                       const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
                       return (

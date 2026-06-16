@@ -49,7 +49,9 @@ function parseExcelDate(val: unknown, XLSX: any): { date: string; hour: number }
   if (typeof val === "string" && val.trim()) {
     const d = new Date(val);
     if (!isNaN(d.getTime())) {
-      return { date: d.toISOString().split("T")[0], hour: d.getHours() };
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return { date: `${d.getFullYear()}-${month}-${day}`, hour: d.getHours() };
     }
   }
   return { date: "", hour: 0 };
