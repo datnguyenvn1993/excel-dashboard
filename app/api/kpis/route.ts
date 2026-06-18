@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       const importAt = metaRes.rows[0]?.value;
       if (importAt) {
         const d = new Date(importAt);
-        if (!isNaN(d.getTime())) effectiveHour = d.getHours();
+        if (!isNaN(d.getTime())) effectiveHour = (d.getUTCHours() + 7) % 24;
       }
     }
     const hourFilterSql = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
