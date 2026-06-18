@@ -24,7 +24,10 @@ interface TeamRow {
 interface ChartData {
   todayDate: string | null; d7Date: string | null;
   hourly: { hour: string; today: number; d7: number }[];
-  daily: { date: string; complete: number; processing: number; cancel: number; gmv: number }[];
+  daily: {
+    date: string; complete: number; processing: number; cancel: number; gmv: number;
+    complete_d7: number; processing_d7: number; cancel_d7: number; gmv_d7: number;
+  }[];
 }
 interface TableRow {
   id: number; order_id: string; status: string; depot: string;
@@ -270,6 +273,13 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const [teamNames, setTeamNames] = useState<string[]>([]);
   const [showTeamLines, setShowTeamLines] = useState(false);
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
+  const [hiddenDaily, setHiddenDaily] = useState<Set<string>>(new Set());
+  const toggleDaily = useCallback((data: any) => {
+    if (data.dataKey) {
+      const key = String(data.dataKey);
+      setHiddenDaily(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+    }
+  }, []);
   const [driverInfo, setDriverInfo] = useState<{ total: number; lastImport: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const watermarkText = currentUser ? (currentUser.display_name || currentUser.username) : undefined;
@@ -831,21 +841,38 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                     if (name === "GMV") return [value + " Tr", name];
                     return [value, name];
                   }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar yAxisId="right" dataKey="gmv" name="GMV" fill={isDark ? "#facc15" : "#f59e0b"} radius={[4, 4, 0, 0]} maxBarSize={40}>
-                    <LabelList dataKey="gmv" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? v + "Tr" : ""} />
+                  <Legend wrapperStyle={{ fontSize: 12, cursor: "pointer" }} onClick={toggleDaily} />
+
+                  <Bar yAxisId="right" dataKey="gmv" name="GMV" fill={isDark ? "#facc15" : "#f59e0b"} radius={[4, 4, 0, 0]} maxBarSize={40} hide={hiddenDaily.has("gmv")}>
+                    {!hiddenDaily.has("gmv") && <LabelList dataKey="gmv" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? v + "Tr" : ""} />}
                   </Bar>
-                  <Line yAxisId="left" type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
-                    <LabelList dataKey="complete" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
+                  <Bar yAxisId="right" dataKey="gmv_d7" name="GMV (D-7)" fill={isDark ? "#facc15" : "#f59e0b"} fillOpacity={0.4} radius={[4, 4, 0, 0]} maxBarSize={40} legendType="none" hide={hiddenDaily.has("gmv")}>
+                    {!hiddenDaily.has("gmv") && <LabelList dataKey="gmv_d7" position="insideTop" offset={2} style={{ fontSize: 9, fill: isDark ? "#422006" : "#78350f", fontWeight: "bold" }} formatter={(v: number) => v > 0 ? v + "Tr" : ""} />}
+                  </Bar>
+
+                  <Line yAxisId="left" type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} hide={hiddenDaily.has("complete")}>
+                    {!hiddenDaily.has("complete") && <LabelList dataKey="complete" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
                   </Line>
-                  <Line yAxisId="left" type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
-                    <LabelList dataKey="processing" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
+                  <Line yAxisId="left" type="monotone" dataKey="complete_d7" name="Hoàn thành (D-7)" stroke="#10b981" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 2 }} activeDot={{ r: 4 }} legendType="none" hide={hiddenDaily.has("complete")}>
+                    {!hiddenDaily.has("complete") && <LabelList dataKey="complete_d7" position="bottom" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
                   </Line>
-                  <Line yAxisId="left" type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
-                    <LabelList dataKey="cancel" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
+
+                  <Line yAxisId="left" type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} hide={hiddenDaily.has("processing")}>
+                    {!hiddenDaily.has("processing") && <LabelList dataKey="processing" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
+                  </Line>
+                  <Line yAxisId="left" type="monotone" dataKey="processing_d7" name="Processing (D-7)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 2 }} activeDot={{ r: 4 }} legendType="none" hide={hiddenDaily.has("processing")}>
+                    {!hiddenDaily.has("processing") && <LabelList dataKey="processing_d7" position="bottom" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
+                  </Line>
+
+                  <Line yAxisId="left" type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} hide={hiddenDaily.has("cancel")}>
+                    {!hiddenDaily.has("cancel") && <LabelList dataKey="cancel" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
+                  </Line>
+                  <Line yAxisId="left" type="monotone" dataKey="cancel_d7" name="Hủy (D-7)" stroke="#ef4444" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 2 }} activeDot={{ r: 4 }} legendType="none" hide={hiddenDaily.has("cancel")}>
+                    {!hiddenDaily.has("cancel") && <LabelList dataKey="cancel_d7" position="bottom" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? String(v) : ""} />}
                   </Line>
                 </ComposedChart>
               </ResponsiveContainer>
+              <p className={`text-xs mt-2 text-center ${textSec}`}>Nhấn vào chú thích bên trên để ẩn/hiện theo cặp D và D-7</p>
             </div>
           )}
 
