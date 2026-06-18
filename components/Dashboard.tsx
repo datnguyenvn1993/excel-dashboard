@@ -715,10 +715,9 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                       );
                     })}
                     {(() => {
-                      const targets = teamReport.filter((t: any) => t.doi && t.doi.startsWith("PLF.HCM.DOIXE"));
-                      if (targets.length === 0) return null;
+                      if (teamReport.length === 0) return null;
                       let gmv = 0, gmv_prev = 0, driver_active = 0, driver_active_prev = 0, trip_complete = 0, trip_complete_prev = 0;
-                      for (const t of targets) {
+                      for (const t of teamReport) {
                         gmv += t.gmv || 0; gmv_prev += t.gmv_prev || 0;
                         driver_active += t.driver_active || 0; driver_active_prev += t.driver_active_prev || 0;
                         trip_complete += t.trip_complete || 0; trip_complete_prev += t.trip_complete_prev || 0;
