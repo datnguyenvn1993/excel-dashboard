@@ -25,21 +25,21 @@ export async function GET(req: NextRequest) {
       WITH curr AS (
         SELECT COALESCE(d.doi, '') AS doi,
           COALESCE(SUM(CASE WHEN LOWER(o.status) LIKE 'complete%' THEN o.total_pay ELSE 0 END),0)::float AS gmv,
-          COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),''))::int AS driver_active,
-          COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
+          COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),'')) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS driver_active,
+          COUNT(o.id) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
         LEFT JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${dateExpr} AND TRIM(CAST(o.depot AS TEXT)) LIKE '1032%' ${hourFilterSql}
+        WHERE o.create_date = ${dateExpr} AND TRIM(CAST(o.depot AS TEXT)) = '1032' ${hourFilterSql}
         GROUP BY COALESCE(d.doi, '')
       ),
       prev AS (
         SELECT COALESCE(d.doi, '') AS doi,
           COALESCE(SUM(CASE WHEN LOWER(o.status) LIKE 'complete%' THEN o.total_pay ELSE 0 END),0)::float AS gmv,
-          COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),''))::int AS driver_active,
-          COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
+          COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),'')) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS driver_active,
+          COUNT(o.id) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
         LEFT JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${prevExpr} AND TRIM(CAST(o.depot AS TEXT)) LIKE '1032%' ${hourFilterSql}
+        WHERE o.create_date = ${prevExpr} AND TRIM(CAST(o.depot AS TEXT)) = '1032' ${hourFilterSql}
         GROUP BY COALESCE(d.doi, '')
       )
       SELECT COALESCE(c.doi, p.doi) AS doi,
