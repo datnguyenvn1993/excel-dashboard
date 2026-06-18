@@ -98,10 +98,6 @@ export async function GET(req: NextRequest) {
           processing: r.processing,
           cancel: r.cancel,
           gmv: Math.round(r.gmv / 1_000_000),
-          complete_d7: r.complete_d7,
-          processing_d7: r.processing_d7,
-          cancel_d7: r.cancel_d7,
-          gmv_d7: Math.round(r.gmv_d7 / 1_000_000),
         };
       }),
     });
