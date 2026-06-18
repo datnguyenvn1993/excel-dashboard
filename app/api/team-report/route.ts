@@ -23,24 +23,24 @@ export async function GET(req: NextRequest) {
     const args = dateParam ? [dateParam] : [];
     const sql = `
       WITH curr AS (
-        SELECT d.doi,
+        SELECT COALESCE(d.doi, '') AS doi,
           COALESCE(SUM(CASE WHEN LOWER(o.status) LIKE 'complete%' THEN o.total_pay ELSE 0 END),0)::float AS gmv,
           COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),''))::int AS driver_active,
           COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
-        JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${dateExpr} ${hourFilterSql}
-        GROUP BY d.doi
+        LEFT JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
+        WHERE o.create_date = ${dateExpr} AND o.depot = '1032' ${hourFilterSql}
+        GROUP BY COALESCE(d.doi, '')
       ),
       prev AS (
-        SELECT d.doi,
+        SELECT COALESCE(d.doi, '') AS doi,
           COALESCE(SUM(CASE WHEN LOWER(o.status) LIKE 'complete%' THEN o.total_pay ELSE 0 END),0)::float AS gmv,
           COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),''))::int AS driver_active,
           COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
-        JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${prevExpr} ${hourFilterSql}
-        GROUP BY d.doi
+        LEFT JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
+        WHERE o.create_date = ${prevExpr} AND o.depot = '1032' ${hourFilterSql}
+        GROUP BY COALESCE(d.doi, '')
       )
       SELECT c.doi,
         c.gmv, p.gmv AS gmv_prev,
