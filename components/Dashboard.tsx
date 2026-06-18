@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
+import { ComposedChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface KPIResult {
@@ -24,7 +24,7 @@ interface TeamRow {
 interface ChartData {
   todayDate: string | null; d7Date: string | null;
   hourly: { hour: string; today: number; d7: number }[];
-  daily: { date: string; complete: number; processing: number; cancel: number }[];
+  daily: { date: string; complete: number; processing: number; cancel: number; gmv: number }[];
 }
 interface TableRow {
   id: number; order_id: string; status: string; depot: string;
@@ -822,22 +822,29 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                 <ScreenshotBtn targetRef={dailyRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={chartData.daily} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <ComposedChart data={chartData.daily} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: tick }} />
-                  <YAxis tick={{ fontSize: 11, fill: tick }} width={50} />
-                  <Tooltip {...tt} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: tick }} width={40} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: tick }} width={50} tickFormatter={(v) => v + " Tr"} />
+                  <Tooltip {...tt} formatter={(value: number, name: string) => {
+                    if (name === "GMV") return [value + " Tr", name];
+                    return [value, name];
+                  }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                  <Bar yAxisId="right" dataKey="gmv" name="GMV" fill={isDark ? "#facc15" : "#f59e0b"} radius={[4, 4, 0, 0]} maxBarSize={40}>
+                    <LabelList dataKey="gmv" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => v > 0 ? v + "Tr" : ""} />
+                  </Bar>
+                  <Line yAxisId="left" type="monotone" dataKey="complete" name="Hoàn thành" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
                     <LabelList dataKey="complete" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
                   </Line>
-                  <Line type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                  <Line yAxisId="left" type="monotone" dataKey="processing" name="Processing" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
                     <LabelList dataKey="processing" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
                   </Line>
-                  <Line type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                  <Line yAxisId="left" type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
                     <LabelList dataKey="cancel" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
                   </Line>
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}

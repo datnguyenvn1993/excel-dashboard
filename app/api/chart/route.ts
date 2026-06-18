@@ -46,7 +46,8 @@ export async function GET(req: NextRequest) {
         `SELECT create_date::text as date,
            COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
            COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
-           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel
+           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
+           COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
          FROM orders
          WHERE create_date >= $1::date - 10
          ${cityFilterSql}
@@ -77,6 +78,7 @@ export async function GET(req: NextRequest) {
         complete: r.complete,
         processing: r.processing,
         cancel: r.cancel,
+        gmv: Math.round(r.gmv / 1_000_000),
       })),
     });
   } catch (e) {
