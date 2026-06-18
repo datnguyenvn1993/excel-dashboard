@@ -88,17 +88,22 @@ export async function GET(req: NextRequest) {
         today: Math.round(todayGMV[h] / 1_000_000),
         d7: Math.round(d7GMV[h] / 1_000_000),
       })),
-      daily: dailyRes.rows.map(r => ({
-        date: r.date.slice(5).replace("-", "/"),
-        complete: r.complete,
-        processing: r.processing,
-        cancel: r.cancel,
-        gmv: Math.round(r.gmv / 1_000_000),
-        complete_d7: r.complete_d7,
-        processing_d7: r.processing_d7,
-        cancel_d7: r.cancel_d7,
-        gmv_d7: Math.round(r.gmv_d7 / 1_000_000),
-      })),
+      daily: dailyRes.rows.map(r => {
+        const d = new Date(r.date + "T00:00:00Z");
+        const dayOfWeek = d.getUTCDay();
+        return {
+          date: r.date.slice(5).replace("-", "/"),
+          isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
+          complete: r.complete,
+          processing: r.processing,
+          cancel: r.cancel,
+          gmv: Math.round(r.gmv / 1_000_000),
+          complete_d7: r.complete_d7,
+          processing_d7: r.processing_d7,
+          cancel_d7: r.cancel_d7,
+          gmv_d7: Math.round(r.gmv_d7 / 1_000_000),
+        };
+      }),
     });
   } catch (e) {
     console.error("chart error:", e);

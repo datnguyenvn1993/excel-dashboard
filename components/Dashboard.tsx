@@ -25,7 +25,7 @@ interface ChartData {
   todayDate: string | null; d7Date: string | null;
   hourly: { hour: string; today: number; d7: number }[];
   daily: {
-    date: string; complete: number; processing: number; cancel: number; gmv: number;
+    date: string; isWeekend?: boolean; complete: number; processing: number; cancel: number; gmv: number;
     complete_d7: number; processing_d7: number; cancel_d7: number; gmv_d7: number;
   }[];
 }
@@ -834,7 +834,15 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
               <ResponsiveContainer width="100%" height={280}>
                 <ComposedChart data={chartData.daily} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: tick }} />
+                  <XAxis dataKey="date" tick={(props: any) => {
+                    const { x, y, payload } = props;
+                    const isWk = chartData.daily.find(d => d.date === payload.value)?.isWeekend;
+                    return (
+                      <text x={x} y={y + 12} textAnchor="middle" fill={isWk ? "#ef4444" : tick} fontSize={11} fontWeight={isWk ? "bold" : "normal"}>
+                        {payload.value}
+                      </text>
+                    );
+                  }} />
                   <YAxis yAxisId="left" tick={{ fontSize: 11, fill: tick }} width={40} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: tick }} width={50} tickFormatter={(v) => v + " Tr"} />
                   <Tooltip {...tt} formatter={(value: number, name: string) => {
