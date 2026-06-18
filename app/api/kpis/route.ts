@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const regionFilterSql = selectedRegions.length > 0
     ? "AND (" + regionCaseSql + ") IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
     : "";
-  const hourFilterSql = hour !== null ? `AND create_hour = ${hour}` : "";
+  const hourFilterSql = hour !== null ? `AND create_hour <= ${hour}` : "";
 
   const client = await db.connect();
   try {
@@ -28,8 +28,10 @@ export async function GET(req: NextRequest) {
     }
     if (!targetDate) {
       return NextResponse.json({
-        national: { total:0, gmv:0, complete:0, cancel:0, processing:0, txActive:0,
-          maxDate:null, minDate:null, d7Total:0, d7Gmv:0, d7TxActive:0 },
+        national: {
+          total: 0, gmv: 0, complete: 0, cancel: 0, processing: 0, txActive: 0,
+          maxDate: null, minDate: null, d7Total: 0, d7Gmv: 0, d7TxActive: 0
+        },
         regions: [], availableDates: [], lastImportAt: null, d7Date: null,
       });
     }
@@ -96,8 +98,8 @@ export async function GET(req: NextRequest) {
         d7Total: rd7?.total ?? 0, d7Gmv: rd7?.gmv ?? 0, d7TxActive: rd7?.tx_active ?? 0,
       },
       regions: REGION_ORDER.map(name => {
-        const row = reg.rows.find((rw: {region:string}) => rw.region === name);
-        const rowD7 = regD7.rows.find((rw: {region:string}) => rw.region === name);
+        const row = reg.rows.find((rw: { region: string }) => rw.region === name);
+        const rowD7 = regD7.rows.find((rw: { region: string }) => rw.region === name);
         if (!row) return null;
         return {
           region: name, total: row.total, gmv: row.gmv,
@@ -106,7 +108,7 @@ export async function GET(req: NextRequest) {
           d7Total: rowD7?.total ?? 0, d7Gmv: rowD7?.gmv ?? 0, d7TxActive: rowD7?.tx_active ?? 0,
         };
       }).filter(Boolean),
-      availableDates: dates.rows.map((d: {date:string}) => d.date),
+      availableDates: dates.rows.map((d: { date: string }) => d.date),
       lastImportAt,
       d7Date: d7DateStr,
     });

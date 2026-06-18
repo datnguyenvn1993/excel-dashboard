@@ -5,12 +5,12 @@ const D10 = `create_date >= (SELECT COALESCE(MAX(create_date)-INTERVAL '10 days'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const page  = Math.max(0, parseInt(searchParams.get("page")  ?? "0"));
+  const page = Math.max(0, parseInt(searchParams.get("page") ?? "0"));
   const limit = Math.min(500, parseInt(searchParams.get("limit") ?? "100"));
   const offset = page * limit;
   const hourParam = searchParams.get("hour");
   const hour = hourParam !== null && hourParam !== "" ? parseInt(hourParam, 10) : null;
-  const hourFilter = hour !== null ? `AND create_hour = ${hour}` : "";
+  const hourFilter = hour !== null ? `AND create_hour <= ${hour}` : "";
 
   const client = await db.connect();
   try {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       client.query(`SELECT COUNT(*)::int as total FROM orders WHERE ${D10} ${hourFilter}`),
     ]);
     return NextResponse.json({
-      rows:  dataRes.rows,
+      rows: dataRes.rows,
       total: countRes.rows[0].total,
       page,
       limit,

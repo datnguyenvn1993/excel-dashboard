@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   try {
     const dateExpr = dateParam ? "$1::date" : "(SELECT MAX(create_date) FROM orders)";
     const prevExpr = dateParam ? "($1::date - INTERVAL '7 days')" : "((SELECT MAX(create_date) FROM orders) - INTERVAL '7 days')";
-    const hourFilterSql = hour !== null ? `AND o.create_hour = ${hour}` : "";
+    const hourFilterSql = hour !== null ? `AND o.create_hour <= ${hour}` : "";
     const args = dateParam ? [dateParam] : [];
     const sql = `
       WITH curr AS (
