@@ -43,15 +43,30 @@ export async function GET(req: NextRequest) {
         [maxDate, d7Str]
       ),
       client.query(
-        `SELECT create_date::text as date,
-           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
-           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
-           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
-           COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
-         FROM orders
-         WHERE create_date >= $1::date - 10
-         ${cityFilterSql}
-         GROUP BY create_date ORDER BY create_date`,
+        `WITH daily_agg AS (
+           SELECT create_date,
+             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
+             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
+             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
+             COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
+           FROM orders
+           WHERE create_date >= $1::date - 17
+           ${cityFilterSql}
+           GROUP BY create_date
+         )
+         SELECT d1.create_date::text as date,
+           COALESCE(d1.complete,0) as complete,
+           COALESCE(d1.processing,0) as processing,
+           COALESCE(d1.cancel,0) as cancel,
+           COALESCE(d1.gmv,0) as gmv,
+           COALESCE(d2.complete,0) as complete_d7,
+           COALESCE(d2.processing,0) as processing_d7,
+           COALESCE(d2.cancel,0) as cancel_d7,
+           COALESCE(d2.gmv,0) as gmv_d7
+         FROM daily_agg d1
+         LEFT JOIN daily_agg d2 ON d1.create_date = d2.create_date + 7
+         WHERE d1.create_date >= $1::date - 10
+         ORDER BY d1.create_date`,
         [maxDate]
       ),
     ]);
@@ -79,6 +94,10 @@ export async function GET(req: NextRequest) {
         processing: r.processing,
         cancel: r.cancel,
         gmv: Math.round(r.gmv / 1_000_000),
+        complete_d7: r.complete_d7,
+        processing_d7: r.processing_d7,
+        cancel_d7: r.cancel_d7,
+        gmv_d7: Math.round(r.gmv_d7 / 1_000_000),
       })),
     });
   } catch (e) {
