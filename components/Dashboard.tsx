@@ -685,8 +685,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                           <>
                             {th("doi", "Đội", "left")}
                             {th("gmv", "GMV", "right")} {th("wGmv", "WoW%", "right")}
-                            {th("driver_active", "Driver Act", "right")} {th("wDa", "WoW%", "right")}
-                            {th("trip_complete", "Trip Cpl", "right")} {th("wTc", "WoW%", "right")}
+                            {th("driver_active", "Active Driver", "right")} {th("wDa", "WoW%", "right")}
+                            {th("trip_complete", "Trip", "right")} {th("wTc", "WoW%", "right")}
                             {th("tpd", "TpD", "right")} {th("wTpd", "WoW%", "right")}
                           </>
                         );
