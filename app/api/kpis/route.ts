@@ -14,10 +14,19 @@ export async function GET(req: NextRequest) {
   const regionFilterSql = selectedRegions.length > 0
     ? "AND (" + regionCaseSql + ") IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
     : "";
-  const hourFilterSql = hour !== null ? `AND create_hour <= ${hour}` : "";
-
   const client = await db.connect();
   try {
+    // Resolve effective hour: use import hour when no explicit hour filter
+    let effectiveHour = hour;
+    if (effectiveHour === null) {
+      const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
+      const importAt = metaRes.rows[0]?.value;
+      if (importAt) {
+        const d = new Date(importAt);
+        if (!isNaN(d.getTime())) effectiveHour = d.getHours();
+      }
+    }
+    const hourFilterSql = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
     // Resolve target date
     let targetDate: string;
     if (dateParam) {
@@ -111,6 +120,7 @@ export async function GET(req: NextRequest) {
       availableDates: dates.rows.map((d: { date: string }) => d.date),
       lastImportAt,
       d7Date: d7DateStr,
+      importHour: effectiveHour,
     });
   } catch (e) {
     console.error("kpis error:", e);

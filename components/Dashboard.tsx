@@ -13,6 +13,7 @@ interface KPIData {
   availableDates: string[];
   lastImportAt: string | null;
   d7Date: string | null;
+  importHour: number | null;
 }
 interface TeamRow {
   doi: string;
@@ -517,7 +518,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
           <div className="min-w-0">
             <h1 className={`text-sm font-bold uppercase tracking-wide ${textPri}`}>📊 BÁO CÁO VẬN HÀNH PLATFORM</h1>
             <p className={`text-xs mt-0.5 ${textSec}`}>
-              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}${selectedHour !== null ? ` · 00:00–${String(selectedHour).padStart(2, "0")}:00` : ""}`}
+              {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}${selectedHour !== null ? ` · 00:00–${String(selectedHour).padStart(2, "0")}:00` : (kpiData?.importHour != null ? ` · 00:00–${String(kpiData.importHour).padStart(2, "0")}:00` : "")}`}
             </p>
             {importTimeStr && (
               <p className={`text-xs ${importIsStale ? "text-red-500" : (isDark ? "text-gray-500" : "text-gray-400")}`}>

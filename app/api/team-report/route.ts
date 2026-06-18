@@ -11,7 +11,15 @@ export async function GET(req: NextRequest) {
   try {
     const dateExpr = dateParam ? "$1::date" : "(SELECT MAX(create_date) FROM orders)";
     const prevExpr = dateParam ? "($1::date - INTERVAL '7 days')" : "((SELECT MAX(create_date) FROM orders) - INTERVAL '7 days')";
-    const hourFilterSql = hour !== null ? `AND o.create_hour <= ${hour}` : "";
+    const hourFilterSql = await (async () => {
+      let h = hour;
+      if (h === null) {
+        const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
+        const importAt = metaRes.rows[0]?.value;
+        if (importAt) { const d = new Date(importAt); if (!isNaN(d.getTime())) h = d.getHours(); }
+      }
+      return h !== null ? `AND o.create_hour <= ${h}` : "";
+    })();
     const args = dateParam ? [dateParam] : [];
     const sql = `
       WITH curr AS (
