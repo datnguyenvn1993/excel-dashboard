@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
           COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
         LEFT JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${dateExpr} AND o.depot = '1032' ${hourFilterSql}
+        WHERE o.create_date = ${dateExpr} AND TRIM(CAST(o.depot AS TEXT)) = '1032' ${hourFilterSql}
         GROUP BY COALESCE(d.doi, '')
       ),
       prev AS (
@@ -39,15 +39,15 @@ export async function GET(req: NextRequest) {
           COUNT(*) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int AS trip_complete
         FROM orders o
         LEFT JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
-        WHERE o.create_date = ${prevExpr} AND o.depot = '1032' ${hourFilterSql}
+        WHERE o.create_date = ${prevExpr} AND TRIM(CAST(o.depot AS TEXT)) = '1032' ${hourFilterSql}
         GROUP BY COALESCE(d.doi, '')
       )
-      SELECT c.doi,
-        c.gmv, p.gmv AS gmv_prev,
-        c.driver_active, p.driver_active AS driver_active_prev,
-        c.trip_complete, p.trip_complete AS trip_complete_prev
-      FROM curr c LEFT JOIN prev p ON c.doi = p.doi
-      ORDER BY c.doi
+      SELECT COALESCE(c.doi, p.doi) AS doi,
+        COALESCE(c.gmv, 0) AS gmv, p.gmv AS gmv_prev,
+        COALESCE(c.driver_active, 0) AS driver_active, p.driver_active AS driver_active_prev,
+        COALESCE(c.trip_complete, 0) AS trip_complete, p.trip_complete AS trip_complete_prev
+      FROM curr c FULL OUTER JOIN prev p ON c.doi = p.doi
+      ORDER BY COALESCE(c.doi, p.doi)
     `;
     const r = await client.query(sql, args);
     return NextResponse.json({ teams: r.rows });
