@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
     const buildNatQuery = () => `
       WITH deduped AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
-          id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city
+          id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city, cancel_by
         FROM orders WHERE create_date = $1::date ${hourFilterSql}
         ORDER BY COALESCE(NULLIF(order_id,''), id::text)
       )
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
         COUNT(*)::int as total,
         COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
-        COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
+        COUNT(NULLIF(TRIM(cancel_by), ''))::int as cancel,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
         COUNT(DISTINCT NULLIF(TRIM(sap_profile_id),''))::int as tx_active
       FROM deduped WHERE 1=1 ${regionFilterSql}
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
     const buildRegQuery = () => `
       WITH deduped AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
-          id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city
+          id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city, cancel_by
         FROM orders WHERE create_date = $1::date ${hourFilterSql}
         ORDER BY COALESCE(NULLIF(order_id,''), id::text)
       )
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
         COUNT(*)::int as total,
         COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
-        COUNT(*) FILTER (WHERE LOWER(status) LIKE 'cancel%')::int as cancel,
+        COUNT(NULLIF(TRIM(cancel_by), ''))::int as cancel,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
         COUNT(DISTINCT NULLIF(TRIM(sap_profile_id),''))::int as tx_active
       FROM deduped GROUP BY 1 ORDER BY 1

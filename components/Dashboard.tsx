@@ -233,7 +233,7 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
     { label: "Tổng đơn", value: fmt(t), color: "gray", delta: deltaPct(t, kpi.d7Total) },
     { label: "% Hoàn thành", value: pctC.toFixed(1) + "%", color: "green" },
     { label: "AOV", value: fmt(aov), color: "purple" },
-    { label: "Đơn hủy", value: fmt(kpi.cancel), color: "red" },
+    { label: "TX hủy", value: fmt(kpi.cancel), color: "red" },
     { label: "% Hủy", value: pctX.toFixed(1) + "%", color: "orange" },
     { label: "Processing", value: fmt(kpi.processing), color: "blue" },
     { label: "TX Active", value: fmt(tx), color: "green", delta: deltaPct(tx, kpi.d7TxActive) },
@@ -854,7 +854,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                     <LabelList dataKey="processing" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
                   </Line>
 
-                  <Line yAxisId="left" type="monotone" dataKey="cancel" name="Hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                  <Line yAxisId="left" type="monotone" dataKey="cancel" name="TX hủy" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
                     <LabelList dataKey="cancel" position="top" style={{ fontSize: 9, fill: tick }} formatter={(v: number) => String(v)} />
                   </Line>
                 </ComposedChart>
