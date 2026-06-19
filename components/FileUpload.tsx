@@ -16,6 +16,7 @@ const COL_ALIASES: Record<string, string[]> = {
   create_time: ["create date", "create time", "create_date", "create_time", "created at", "ngay tao", "thoi gian tao"],
   sap_profile_id: ["sap id", "sap profile id", "sap_id", "sap_profile_id", "sap profile", "sapid"],
   distance: ["distance", "khoang cach"],
+  cancel_by: ["cancel by", "cancel_by", "cancelled by", "nguoi huy", "người hủy", "huy_boi", "hủy bởi"],
 };
 
 interface ImportRow {
@@ -28,6 +29,7 @@ interface ImportRow {
   create_hour: number;
   sap_profile_id: string;
   distance: string;
+  cancel_by: string;
 }
 
 interface FileUploadProps {
@@ -118,6 +120,7 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
             create_hour: hour,
             sap_profile_id: String(colMap.sap_profile_id ? (raw[colMap.sap_profile_id] ?? "") : ""),
             distance: String(colMap.distance ? (raw[colMap.distance] ?? "") : ""),
+            cancel_by: String(colMap.cancel_by ? (raw[colMap.cancel_by] ?? "") : ""),
           };
         });
 

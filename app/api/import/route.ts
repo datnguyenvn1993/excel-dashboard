@@ -11,6 +11,7 @@ interface ImportRow {
   create_hour: number;
   sap_profile_id: string;
   distance: string;
+  cancel_by: string;
 }
 
 // 500 rows x 9 cols = 4500 params, dưới giới hạn 65535 của Postgres
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
         const batch = filteredRows.slice(i, i + CHUNK);
         const values: unknown[] = [];
         const placeholders = batch.map((_, j) => {
-          const b = j * 9;
+          const b = j * 10;
           const row = batch[j];
           values.push(
             row.order_id,
@@ -75,13 +76,14 @@ export async function POST(req: NextRequest) {
             row.create_date || null,
             row.create_hour ?? 0,
             row.sap_profile_id,
-            row.distance
+            row.distance,
+            row.cancel_by
           );
-          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`;
+          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`;
         }).join(",");
 
         await client.query(
-          `INSERT INTO orders(order_id,status,depot,total_pay,pickup_city,create_date,create_hour,sap_profile_id,distance)
+          `INSERT INTO orders(order_id,status,depot,total_pay,pickup_city,create_date,create_hour,sap_profile_id,distance,cancel_by)
            VALUES ${placeholders}`,
           values
         );

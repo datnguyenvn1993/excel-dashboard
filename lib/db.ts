@@ -18,6 +18,7 @@ export async function initDB() {
         create_hour  SMALLINT,
         sap_profile_id TEXT,
         distance     TEXT,
+        cancel_by    TEXT,
         imported_at  TIMESTAMPTZ DEFAULT NOW()
       )
     `);
