@@ -5,8 +5,8 @@ export async function GET(req: NextRequest) {
     await initDB();
     const client = await db.connect();
     try {
-        const r = await client.query("SELECT DISTINCT depot FROM orders LIMIT 20");
-        return NextResponse.json({ depots: r.rows });
+        await client.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_by TEXT;");
+        return NextResponse.json({ ok: true });
     } finally {
         client.release();
     }
