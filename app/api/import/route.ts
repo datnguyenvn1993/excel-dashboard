@@ -16,6 +16,18 @@ interface ImportRow {
 // 500 rows x 9 cols = 4500 params, dưới giới hạn 65535 của Postgres
 const CHUNK = 500;
 
+const VALID_STATUSES = ["Complete", "Cancel", "In Process"];
+
+const VALID_DEPOTS = [
+  "PFBLU", "1017", "1109", "PFBDI", "1107", "1019", "PFBTN", "2000",
+  "PFCMU", "PFDLA", "PFĐắk Nông", "2010", "1108", "1022", "PFGLA",
+  "PFHDU", "PFHNA", "1031", "1032", "PFHBI", "2012", "1015", "2011",
+  "PFKGG", "PFLDG", "PFLSN", "PFLCI", "2013", "PFNBI", "PFNTN", "3002",
+  "PFPYE", "PFQBI", "2014", "1041", "1016", "PFQTR", "PFSTG", "PFTNI",
+  "PFTBI", "PFTNG", "1000", "1110", "PFTVH", "PFTQU", "PFVLG", "1018",
+  "PLFYBI",
+];
+
 export async function POST(req: NextRequest) {
   try {
     await initDB();
@@ -25,6 +37,15 @@ export async function POST(req: NextRequest) {
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ error: "No rows" }, { status: 400 });
+    }
+
+    // Lọc bỏ các dòng không hợp lệ trước khi insert
+    const filteredRows = rows.filter(
+      (r) => VALID_STATUSES.includes(r.status) && VALID_DEPOTS.includes(r.depot)
+    );
+
+    if (filteredRows.length === 0) {
+      return NextResponse.json({ error: "No valid rows after filtering" }, { status: 400 });
     }
 
     const client = await db.connect();
@@ -39,8 +60,8 @@ export async function POST(req: NextRequest) {
         await client.query("TRUNCATE TABLE orders RESTART IDENTITY");
       }
 
-      for (let i = 0; i < rows.length; i += CHUNK) {
-        const batch = rows.slice(i, i + CHUNK);
+      for (let i = 0; i < filteredRows.length; i += CHUNK) {
+        const batch = filteredRows.slice(i, i + CHUNK);
         const values: unknown[] = [];
         const placeholders = batch.map((_, j) => {
           const b = j * 9;
@@ -56,7 +77,7 @@ export async function POST(req: NextRequest) {
             row.sap_profile_id,
             row.distance
           );
-          return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9})`;
+          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`;
         }).join(",");
 
         await client.query(
@@ -72,7 +93,7 @@ export async function POST(req: NextRequest) {
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
       );
 
-      return NextResponse.json({ inserted: rows.length });
+      return NextResponse.json({ inserted: filteredRows.length, filtered: rows.length - filteredRows.length });
     } finally {
       client.release();
     }
