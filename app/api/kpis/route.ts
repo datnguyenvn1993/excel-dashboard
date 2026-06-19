@@ -19,11 +19,21 @@ export async function GET(req: NextRequest) {
     // Resolve effective hour: use import hour when no explicit hour filter
     let effectiveHour = hour;
     if (effectiveHour === null) {
-      const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
-      const importAt = metaRes.rows[0]?.value;
-      if (importAt) {
-        const d = new Date(importAt);
-        if (!isNaN(d.getTime())) effectiveHour = (d.getUTCHours() + 7) % 24;
+      if (dateParam) {
+        // User selected a specific date: get max hour available for THAT date
+        const maxHourRes = await client.query(
+          "SELECT MAX(create_hour)::int as h FROM orders WHERE create_date = $1::date",
+          [dateParam]
+        );
+        effectiveHour = maxHourRes.rows[0]?.h ?? null;
+      } else {
+        // No date param: use last_import_at (today's latest import)
+        const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
+        const importAt = metaRes.rows[0]?.value;
+        if (importAt) {
+          const d = new Date(importAt);
+          if (!isNaN(d.getTime())) effectiveHour = (d.getUTCHours() + 7) % 24;
+        }
       }
     }
     const hourFilterSql = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
