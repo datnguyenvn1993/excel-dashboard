@@ -16,7 +16,7 @@ interface ImportRow {
 // 500 rows x 9 cols = 4500 params, dưới giới hạn 65535 của Postgres
 const CHUNK = 500;
 
-const VALID_STATUSES = ["Complete", "Cancel", "In Process"];
+const VALID_STATUSES = ["COMPLETED", "CANCELLED"];
 
 const VALID_DEPOTS = [
   "PFBLU", "1017", "1109", "PFBDI", "1107", "1019", "PFBTN", "2000",
