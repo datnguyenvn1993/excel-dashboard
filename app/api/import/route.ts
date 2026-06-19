@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     // Lọc bỏ các dòng không hợp lệ trước khi insert
     const filteredRows = rows.filter(
-      (r) => VALID_STATUSES.includes(r.status) && VALID_DEPOTS.includes(r.depot)
+      (r) => VALID_STATUSES.includes(String(r.status)) && VALID_DEPOTS.includes(String(r.depot))
     );
 
     if (filteredRows.length === 0) {
