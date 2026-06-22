@@ -6,6 +6,7 @@ import { ComposedChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Toolt
 interface KPIResult {
   total: number; gmv: number; complete: number; cancel: number; processing: number; txActive: number;
   d7Total?: number; d7Gmv?: number; d7TxActive?: number;
+  d7Complete?: number; d7Cancel?: number;
 }
 interface KPIData {
   national: KPIResult & { maxDate: string | null; minDate: string | null };
@@ -222,26 +223,25 @@ function KPICard({ label, value, color = "blue", isDark, delta }: { label: strin
 function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
   const t = kpi.total, tx = kpi.txActive;
   const pctC = t ? (kpi.complete / t) * 100 : 0;
-  const pctX = t ? (kpi.cancel / t) * 100 : 0;
   const aov = t ? kpi.gmv / t : 0;
   const gmvTx = tx ? kpi.gmv / tx : 0;
   const tpd = tx ? t / tx : 0;
   const d7GmvTx = (kpi.d7TxActive ?? 0) ? (kpi.d7Gmv ?? 0) / (kpi.d7TxActive!) : 0;
   const d7Tpd = (kpi.d7TxActive ?? 0) ? (kpi.d7Total ?? 0) / (kpi.d7TxActive!) : 0;
+  const d7PctC = (kpi.d7Total ?? 0) ? ((kpi.d7Complete ?? 0) / (kpi.d7Total!)) * 100 : 0;
+  const d7Aov = (kpi.d7Total ?? 0) ? ((kpi.d7Gmv ?? 0) / (kpi.d7Total!)) : 0;
   const cards = [
     { label: "GMV", value: formatGMV(kpi.gmv), color: "blue", delta: deltaPct(kpi.gmv, kpi.d7Gmv) },
     { label: "Tổng đơn", value: fmt(t), color: "gray", delta: deltaPct(t, kpi.d7Total) },
-    { label: "% Hoàn thành", value: pctC.toFixed(1) + "%", color: "green" },
-    { label: "AOV", value: fmt(aov), color: "purple" },
-    { label: "TX hủy", value: fmt(kpi.cancel), color: "red" },
-    { label: "% Hủy", value: pctX.toFixed(1) + "%", color: "orange" },
-    { label: "Processing", value: fmt(kpi.processing), color: "blue" },
+    { label: "% Hoàn thành", value: pctC.toFixed(1) + "%", color: "green", delta: (kpi.d7Total ?? 0) ? deltaPct(pctC, d7PctC) : undefined },
+    { label: "AOV", value: fmt(aov), color: "purple", delta: (kpi.d7Total ?? 0) ? deltaPct(aov, d7Aov) : undefined },
+    { label: "TX hủy", value: fmt(kpi.cancel), color: "red", delta: deltaPct(kpi.cancel, kpi.d7Cancel) },
     { label: "TX Active", value: fmt(tx), color: "green", delta: deltaPct(tx, kpi.d7TxActive) },
     { label: "GMV/TX", value: formatGMV(gmvTx), color: "blue", delta: (kpi.d7TxActive ?? 0) ? deltaPct(gmvTx, d7GmvTx) : undefined },
     { label: "TpD", value: tpd.toFixed(1), color: "purple", delta: (kpi.d7TxActive ?? 0) ? deltaPct(tpd, d7Tpd) : undefined },
   ];
   return (
-    <div className="grid grid-cols-5 gap-2">
+    <div className="grid grid-cols-4 gap-2">
       {cards.map(c => <KPICard key={c.label} {...c} isDark={isDark} />)}
     </div>
   );

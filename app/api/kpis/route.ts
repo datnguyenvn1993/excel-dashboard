@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         const importAt = metaRes.rows[0]?.value;
         if (importAt) {
           const d = new Date(importAt);
-          if (!isNaN(d.getTime())) effectiveHour = (d.getUTCHours() + 7) % 24;
+          if (!isNaN(d.getTime())) effectiveHour = ((d.getUTCHours() + 7) % 24) - 1;
         }
       }
     }
@@ -71,10 +71,10 @@ export async function GET(req: NextRequest) {
         COUNT(*)::int as total,
         COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
-        COUNT(NULLIF(TRIM(cancel_by), ''))::int as cancel,
+        COUNT(*) FILTER (WHERE UPPER(TRIM(cancel_by)) = 'DRIVER')::int as cancel,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
         COUNT(DISTINCT NULLIF(TRIM(sap_profile_id),''))::int as tx_active
-      FROM deduped WHERE 1=1 ${regionFilterSql}
+      FROM deduped
     `;
 
     const buildRegQuery = () => `
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
         COUNT(*)::int as total,
         COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
-        COUNT(NULLIF(TRIM(cancel_by), ''))::int as cancel,
+        COUNT(*) FILTER (WHERE UPPER(TRIM(cancel_by)) = 'DRIVER')::int as cancel,
         COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
         COUNT(DISTINCT NULLIF(TRIM(sap_profile_id),''))::int as tx_active
       FROM deduped GROUP BY 1 ORDER BY 1
@@ -115,6 +115,7 @@ export async function GET(req: NextRequest) {
         cancel: r.cancel, processing: r.processing, txActive: r.tx_active,
         maxDate: targetDate, minDate,
         d7Total: rd7?.total ?? 0, d7Gmv: rd7?.gmv ?? 0, d7TxActive: rd7?.tx_active ?? 0,
+        d7Complete: rd7?.complete ?? 0, d7Cancel: rd7?.cancel ?? 0,
       },
       regions: REGION_ORDER.map(name => {
         const row = reg.rows.find((rw: { region: string }) => rw.region === name);
@@ -125,6 +126,7 @@ export async function GET(req: NextRequest) {
           complete: row.complete, cancel: row.cancel,
           processing: row.processing, txActive: row.tx_active,
           d7Total: rowD7?.total ?? 0, d7Gmv: rowD7?.gmv ?? 0, d7TxActive: rowD7?.tx_active ?? 0,
+          d7Complete: rowD7?.complete ?? 0, d7Cancel: rowD7?.cancel ?? 0,
         };
       }).filter(Boolean),
       availableDates: dates.rows.map((d: { date: string }) => d.date),

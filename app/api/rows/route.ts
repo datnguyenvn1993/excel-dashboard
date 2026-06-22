@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     if (effectiveHour === null) {
       const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
       const importAt = metaRes.rows[0]?.value;
-      if (importAt) { const d = new Date(importAt); if (!isNaN(d.getTime())) effectiveHour = (d.getUTCHours() + 7) % 24; }
+      if (importAt) { const d = new Date(importAt); if (!isNaN(d.getTime())) effectiveHour = ((d.getUTCHours() + 7) % 24) - 1; }
     }
     const hourFilter = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
     const [dataRes, countRes] = await Promise.all([
