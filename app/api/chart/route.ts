@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { citiesForRegions, parseRegions } from "@/lib/regions";
+import { buildRegionSql, citiesForRegions, parseRegions } from "@/lib/regions";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -21,9 +21,9 @@ export async function GET(req: NextRequest) {
     const d7Str = d7.toISOString().slice(0, 10);
 
     // Build city filter if regions selected
-    const cities = selectedRegions.length > 0 ? citiesForRegions(selectedRegions) : [];
-    const cityFilterSql = cities.length > 0
-      ? `AND TRIM(pickup_city) IN (${cities.map(c => `'${c.replace(/'/g, "''")}'  `).join(",")})`
+    const regionCaseSql = buildRegionSql("pickup_city");
+    const regionFilterSql = selectedRegions.length > 0
+      ? "AND (" + regionCaseSql + ") IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
       : "";
 
     const [hourlyRes, dailyRes] = await Promise.all([
@@ -33,13 +33,14 @@ export async function GET(req: NextRequest) {
              create_date, create_hour, total_pay, pickup_city, status
            FROM orders
            WHERE create_date IN ($1::date, $2::date) AND create_hour IS NOT NULL
-           ${cityFilterSql}
+           ${regionFilterSql}
            ORDER BY COALESCE(NULLIF(order_id,''), id::text)
          )
          SELECT create_date::text, create_hour,
+           (${regionCaseSql}) as region,
            COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
          FROM deduped
-         GROUP BY create_date, create_hour ORDER BY create_date, create_hour`,
+         GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
         [maxDate, d7Str]
       ),
       client.query(
@@ -47,11 +48,11 @@ export async function GET(req: NextRequest) {
            SELECT create_date,
              COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
              COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
-             COUNT(NULLIF(TRIM(cancel_by), ''))::int as cancel,
+             COUNT(*) FILTER (WHERE UPPER(TRIM(cancel_by)) = 'DRIVER')::int as cancel,
              COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
            FROM orders
            WHERE create_date >= $1::date - 17
-           ${cityFilterSql}
+           ${regionFilterSql}
            GROUP BY create_date
          )
          SELECT d1.create_date::text as date,
@@ -71,23 +72,38 @@ export async function GET(req: NextRequest) {
       ),
     ]);
 
-    const todayGMV = new Array(24).fill(0);
-    const d7GMV = new Array(24).fill(0);
+    const hourlyData: any[] = Array.from({ length: 24 }, (_, h) => ({
+      hour: String(h).padStart(2, "0") + "h",
+      today: 0,
+      d7: 0
+    }));
+
     for (const row of hourlyRes.rows) {
       const h = row.create_hour;
       if (h < 0 || h > 23) continue;
-      if (row.create_date === maxDate) todayGMV[h] += row.gmv;
-      if (row.create_date === d7Str) d7GMV[h] += row.gmv;
+      const gmvMil = row.gmv / 1_000_000;
+      const rName = row.region;
+
+      if (row.create_date === maxDate) {
+        hourlyData[h].today += gmvMil;
+        if (rName) hourlyData[h][rName] = (hourlyData[h][rName] || 0) + gmvMil;
+      }
+      if (row.create_date === d7Str) {
+        hourlyData[h].d7 += gmvMil;
+        if (rName) hourlyData[h][rName + "_d7"] = (hourlyData[h][rName + "_d7"] || 0) + gmvMil;
+      }
+    }
+
+    for (let h = 0; h < 24; h++) {
+      for (const key in hourlyData[h]) {
+        if (key !== "hour") hourlyData[h][key] = Math.round(hourlyData[h][key]);
+      }
     }
 
     return NextResponse.json({
       todayDate: maxDate,
       d7Date: d7Str,
-      hourly: Array.from({ length: 24 }, (_, h) => ({
-        hour: String(h).padStart(2, "0") + "h",
-        today: Math.round(todayGMV[h] / 1_000_000),
-        d7: Math.round(d7GMV[h] / 1_000_000),
-      })),
+      hourly: hourlyData,
       daily: dailyRes.rows.map(r => {
         const d = new Date(r.date + "T00:00:00Z");
         const dayOfWeek = d.getUTCDay();

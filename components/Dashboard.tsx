@@ -272,6 +272,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const [teamNames, setTeamNames] = useState<string[]>([]);
   const [showTeamLines, setShowTeamLines] = useState(false);
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
+  const [showGmvRegionLines, setShowGmvRegionLines] = useState(false);
+  const [hiddenGmvLines, setHiddenGmvLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{ total: number; lastImport: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const watermarkText = currentUser ? (currentUser.display_name || currentUser.username) : undefined;
@@ -391,6 +393,9 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   }
   function toggleHiddenLine(key: string) {
     setHiddenLines(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+  function toggleHiddenGmvLine(key: string) {
+    setHiddenGmvLines(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
 
   async function handleResetConfirmed() {
@@ -633,29 +638,68 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
 
           {/* ── GMV Hourly chart ─────────────────────────────────────────── */}
           {chartData && (
-            <div ref={hourlyRef} className={`rounded-xl border p-5 shadow-sm ${cardCls}`}>
-              <div className="flex items-center justify-between mb-1">
-                <h3 className={`font-semibold text-sm ${textPri}`}>
+            <div ref={hourlyRef} className={`rounded-xl border overflow-hidden ${cardCls}`}>
+              <div className={`flex items-center justify-between px-4 py-3 ${isDark ? "bg-gray-800" : "bg-gray-50"}`}>
+                <h3 className={`text-sm font-semibold ${textPri}`}>
                   📈 GMV theo giờ — <span className="text-blue-500">{selectedDate ? "Ngày lọc" : "Hôm nay"} ({todayShort})</span> vs <span className={textSec}>D-7 ({d7Short})</span>
                 </h3>
-                <ScreenshotBtn targetRef={hourlyRef} isDark={isDark} watermarkText={watermarkText} />
+                <div className="flex items-center gap-3">
+                  <div className={`flex rounded-lg border overflow-hidden text-xs ${isDark ? "border-gray-600" : "border-gray-300"}`}>
+                    <button onClick={() => { setShowGmvRegionLines(false); setHiddenGmvLines(new Set()); }}
+                      className={`px-3 py-1.5 ${!showGmvRegionLines ? "bg-blue-600 text-white" : (isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100")}`}>
+                      Tổng
+                    </button>
+                    <button onClick={() => { setShowGmvRegionLines(true); setHiddenGmvLines(new Set()); }}
+                      className={`px-3 py-1.5 border-l ${isDark ? "border-gray-600" : "border-gray-300"} ${showGmvRegionLines ? "bg-blue-600 text-white" : (isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100")}`}>
+                      Phân theo khu vực
+                    </button>
+                  </div>
+                  <ScreenshotBtn targetRef={hourlyRef} isDark={isDark} watermarkText={watermarkText} />
+                </div>
               </div>
-              <p className={`text-xs mb-4 ${textSec}`}>Đơn vị: Triệu VNĐ</p>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData.hourly} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                  <XAxis dataKey="hour" tick={{ fontSize: 11, fill: tick }} />
-                  <YAxis tick={{ fontSize: 11, fill: tick }} width={50} />
-                  <Tooltip {...tt} formatter={(v: number, n: string) => [`${v} Tr`, n]} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="today" name={`Hôm nay (${todayShort})`} stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
-                    <LabelList dataKey="today" position="top" style={{ fontSize: 9, fill: isDark ? "#9ca3af" : "#374151" }} formatter={(v: number) => v > 0 ? v.toFixed(1) + "Tr" : ""} />
-                  </Line>
-                  <Line type="monotone" dataKey="d7" name={`D-7 (${d7Short})`} stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 2 }} activeDot={{ r: 4 }}>
-                    <LabelList dataKey="d7" position="bottom" style={{ fontSize: 9, fill: isDark ? "#9ca3af" : "#374151" }} formatter={(v: number) => v > 0 ? v.toFixed(1) + "Tr" : ""} />
-                  </Line>
-                </LineChart>
-              </ResponsiveContainer>
+              <div className={`p-4 ${isDark ? "bg-gray-900" : "bg-white"}`}>
+                <p className={`text-xs mb-4 ${textSec}`}>Đơn vị: Triệu VNĐ</p>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={chartData.hourly} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={grid} />
+                    <XAxis dataKey="hour" tick={{ fontSize: 11, fill: tick }} tickFormatter={h => h} />
+                    <YAxis tick={{ fontSize: 11, fill: tick }} />
+                    <Tooltip contentStyle={{ background: isDark ? "#1f2937" : "#fff", border: "1px solid " + (isDark ? "#374151" : "#e5e7eb"), borderRadius: 8, fontSize: 12 }}
+                      formatter={(v: number, n: string) => [`${Math.round(v)} Tr`, String(n).replace("_d7", " (D-7)")]} />
+                    <Legend wrapperStyle={{ fontSize: 12, cursor: showGmvRegionLines ? "pointer" : "default" }}
+                      onClick={showGmvRegionLines ? (data: any) => { if (data.dataKey) toggleHiddenGmvLine(String(data.dataKey)); } : undefined} />
+
+                    {!showGmvRegionLines && (
+                      <Line type="monotone" dataKey="today" name={`Hôm nay (${todayShort})`} stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                        <LabelList dataKey="today" position="top" style={{ fontSize: 9, fill: isDark ? "#9ca3af" : "#374151" }} formatter={(v: number) => v > 0 ? Math.round(v) + "Tr" : ""} />
+                      </Line>
+                    )}
+                    {!showGmvRegionLines && (
+                      <Line type="monotone" dataKey="d7" name={`D-7 (${d7Short})`} stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 2 }} activeDot={{ r: 4 }}>
+                        <LabelList dataKey="d7" position="bottom" style={{ fontSize: 9, fill: isDark ? "#9ca3af" : "#374151" }} formatter={(v: number) => v > 0 ? Math.round(v) + "Tr" : ""} />
+                      </Line>
+                    )}
+
+                    {showGmvRegionLines && ALL_REGIONS.map((region, i) => (
+                      <Line key={region + "_today"} type="monotone" dataKey={region} name={region}
+                        stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2.5}
+                        dot={{ r: 3 }} activeDot={{ r: 5 }}
+                        hide={hiddenGmvLines.has(region)}
+                        strokeOpacity={hiddenGmvLines.has(region) ? 0.2 : 1}>
+                      </Line>
+                    ))}
+                    {showGmvRegionLines && ALL_REGIONS.map((region, i) => (
+                      <Line key={region + "_d7"} type="monotone" dataKey={region + "_d7"} name={region + "_d7"}
+                        stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2} strokeDasharray="6 3"
+                        dot={{ r: 2 }} activeDot={{ r: 4 }}
+                        hide={hiddenGmvLines.has(region)}
+                        legendType="none"
+                        strokeOpacity={hiddenGmvLines.has(region) ? 0.1 : 0.6}>
+                      </Line>
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
 
