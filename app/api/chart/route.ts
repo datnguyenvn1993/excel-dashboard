@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
              COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
            FROM orders
            WHERE create_date >= $1::date - 17
+           AND SPLIT_PART(TRIM(CAST(depot AS TEXT)), '.', 1) = '1032'
            ${regionFilterSql}
            GROUP BY create_date
          )

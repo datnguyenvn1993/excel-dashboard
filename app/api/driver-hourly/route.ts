@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
         FROM orders
         WHERE create_date::text = $1
           AND TRIM(COALESCE(sap_profile_id,'')) != ''
+          AND SPLIT_PART(TRIM(CAST(depot AS TEXT)), '.', 1) = '1032'
         GROUP BY create_hour ORDER BY create_hour::int
       `, [maxDate]),
       client.query(`
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
         FROM orders
         WHERE create_date::text = $1
           AND TRIM(COALESCE(sap_profile_id,'')) != ''
+          AND SPLIT_PART(TRIM(CAST(depot AS TEXT)), '.', 1) = '1032'
         GROUP BY create_hour ORDER BY create_hour::int
       `, [d7DateStr]),
       client.query(`
@@ -42,6 +44,7 @@ export async function GET(req: NextRequest) {
         JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
         WHERE o.create_date::text = $1
           AND TRIM(COALESCE(o.sap_profile_id,'')) != ''
+          AND SPLIT_PART(TRIM(CAST(o.depot AS TEXT)), '.', 1) = '1032'
         GROUP BY d.doi, o.create_hour ORDER BY d.doi, o.create_hour::int
       `, [maxDate]),
       client.query(`
@@ -52,6 +55,7 @@ export async function GET(req: NextRequest) {
         JOIN drivers d ON NULLIF(TRIM(o.sap_profile_id),'') = d.sap_id
         WHERE o.create_date::text = $1
           AND TRIM(COALESCE(o.sap_profile_id,'')) != ''
+          AND SPLIT_PART(TRIM(CAST(o.depot AS TEXT)), '.', 1) = '1032'
         GROUP BY d.doi, o.create_hour ORDER BY d.doi, o.create_hour::int
       `, [d7DateStr]),
     ]);

@@ -686,6 +686,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                         dot={{ r: 3 }} activeDot={{ r: 5 }}
                         hide={hiddenGmvLines.has(region)}
                         strokeOpacity={hiddenGmvLines.has(region) ? 0.2 : 1}>
+                        {!hiddenGmvLines.has(region) && <LabelList dataKey={region} position="top" style={{ fontSize: 9, fill: REGION_COLORS[i % REGION_COLORS.length] }} formatter={(v: number) => v > 0 ? Math.round(v) + "Tr" : ""} />}
                       </Line>
                     ))}
                     {showGmvRegionLines && ALL_REGIONS.map((region, i) => (
@@ -695,6 +696,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                         hide={hiddenGmvLines.has(region)}
                         legendType="none"
                         strokeOpacity={hiddenGmvLines.has(region) ? 0.1 : 0.6}>
+                        {!hiddenGmvLines.has(region) && <LabelList dataKey={region + "_d7"} position="bottom" style={{ fontSize: 9, fill: REGION_COLORS[i % REGION_COLORS.length] }} formatter={(v: number) => v > 0 ? Math.round(v) + "Tr" : ""} />}
                       </Line>
                     ))}
                   </LineChart>
