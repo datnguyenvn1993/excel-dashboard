@@ -6,23 +6,57 @@ export const REGIONS: Record<string, string[]> = {
     "Thành phố Hà Nội",
   ],
   "Miền Nam": [
-    "Tỉnh Trà Vinh","Tỉnh Bình Dương","Tỉnh Bến Tre","Tỉnh Bình Phước",
-    "Tỉnh Đồng Nai","Tỉnh Gia Lai","Tỉnh Tây Ninh","Tỉnh Đồng Tháp",
-    "Tỉnh Tiền Giang","Tỉnh Lâm Đồng","Tỉnh Bà Rịa - Vũng Tàu","Tỉnh Bình Thuận",
-    "Tỉnh Vĩnh Long","Tỉnh Long An","Tỉnh Quảng Nam","Tỉnh Khánh Hòa",
-    "Tỉnh Kiên Giang","Tỉnh Đắk Nông","Tỉnh Thừa Thiên Huế","Tỉnh Bình Định",
-    "Tỉnh An Giang","Tỉnh Đắk Lắk","Tỉnh Quảng Ngãi","Tỉnh Ninh Thuận",
-    "Tỉnh Sóc Trăng","Tỉnh Bạc Liêu","Tỉnh Cà Mau","Thành phố Cần Thơ",
-    "Tỉnh Hậu Giang","Tỉnh Kon Tum",
+    "Thành phố Đà Nẵng",
+    "Tỉnh Long An",
+    "Tỉnh Bà Rịa - Vũng Tàu",
+    "Tỉnh Khánh Hòa",
+    "Tỉnh Đồng Nai",
+    "Tỉnh Tây Ninh",
+    "Tỉnh Thừa Thiên Huế",
+    "Tỉnh Kon Tum",
+    "Thành phố Cần Thơ",
+    "Tỉnh Đồng Tháp",
+    "Tỉnh Quảng Ngãi",
+    "Tỉnh Bình Phước",
+    "Tỉnh Bình Dương",
+    "Tỉnh Kiên Giang",
+    "Tỉnh Phú Yên",
+    "Tỉnh Bến Tre",
+    "Tỉnh Tiền Giang",
+    "Tỉnh Gia Lai",
+    "Tỉnh Trà Vinh",
+    "Tỉnh Ninh Thuận",
+    "Tỉnh Bình Thuận",
+    "Tỉnh Lâm Đồng",
+    "Tỉnh Bạc Liêu",
+    "Tỉnh Sóc Trăng",
+    "Tỉnh Đắk Nông",
+    "Tỉnh Đắk Lắk",
   ],
   "Miền Bắc": [
-    "Tỉnh Quảng Ninh","Thành phố Đà Nẵng","Tỉnh Bắc Ninh","Tỉnh Quảng Bình",
-    "Tỉnh Thanh Hóa","Tỉnh Phú Thọ","Tỉnh Vĩnh Phúc","Tỉnh Hà Tĩnh",
-    "Thành phố Hải Phòng","Tỉnh Tuyên Quang","Tỉnh Sơn La","Tỉnh Hưng Yên",
-    "Tỉnh Hà Nam","Tỉnh Lạng Sơn","Tỉnh Thái Nguyên","Tỉnh Thái Bình",
-    "Tỉnh Nghệ An","Tỉnh Hải Dương","Tỉnh Hòa Bình","Tỉnh Hà Giang",
-    "Tỉnh Điện Biên","Tỉnh Nam Định","Tỉnh Lai Châu","Sapa - Lào Cai",
-    "Tỉnh Quảng Trị","Tỉnh Ninh Bình","Tỉnh Cao Bằng","Tỉnh Yên Bái","Tỉnh Lào Cai",
+    "Tỉnh Quảng Nam",
+    "Tỉnh Quảng Bình",
+    "Tỉnh Hưng Yên",
+    "Tỉnh Quảng Ninh",
+    "Tỉnh Thanh Hóa",
+    "Tỉnh Vĩnh Phúc",
+    "Tỉnh Hà Nam",
+    "Tỉnh Thái Nguyên",
+    "Tỉnh Bắc Ninh",
+    "Tỉnh Hòa Bình",
+    "Tỉnh Thái Bình",
+    "Tỉnh Nam Định",
+    "Tỉnh Ninh Bình",
+    "Tỉnh Hải Dương",
+    "Tỉnh Quảng Trị",
+    "Tỉnh Hà Giang",
+    "Tỉnh Lào Cai",
+    "Sapa - Lào Cai",
+    "Tỉnh Phú Thọ",
+    "Tỉnh Yên Bái",
+    "Tỉnh Lạng Sơn",
+    "Tỉnh Tuyên Quang",
+    "Thành phố Hải Phòng",
   ],
 };
 
@@ -35,8 +69,8 @@ export function citiesForRegions(names: string[]): string[] {
 
 export function buildRegionSql(col: string): string {
   const cases = Object.entries(REGIONS).map(([region, cities]) => {
-    const list = cities.map(c => `'${c.toLowerCase().replace(/'/g, "''").trim()}'`).join(", ");
-    return `WHEN LOWER(TRIM(${col})) IN (${list}) THEN '${region}'`;
+    const conditions = cities.map(c => `LOWER(TRIM(${col})) LIKE '%${c.toLowerCase().replace(/'/g, "''").trim()}%'`).join(" OR ");
+    return `WHEN ${conditions} THEN '${region}'`;
   });
   return `CASE \n  ${cases.join("\n  ")}\n  ELSE NULL\nEND`;
 }
