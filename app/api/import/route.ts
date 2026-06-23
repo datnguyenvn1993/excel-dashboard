@@ -95,6 +95,9 @@ export async function POST(req: NextRequest) {
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
       );
 
+      // Xóa dữ liệu cũ hơn 20 ngày so với hiện tại
+      await client.query("DELETE FROM orders WHERE create_date < current_date - interval '20 days'");
+
       return NextResponse.json({ inserted: filteredRows.length, filtered: rows.length - filteredRows.length });
     } finally {
       client.release();
