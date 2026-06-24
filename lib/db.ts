@@ -47,6 +47,33 @@ export async function initDB() {
           created_at TIMESTAMPTZ DEFAULT NOW()
         )
       `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS orders_summary (
+        id               SERIAL PRIMARY KEY,
+        create_date      DATE NOT NULL,
+        create_hour      SMALLINT NOT NULL,
+        depot            TEXT NOT NULL DEFAULT '',
+        region           TEXT NOT NULL DEFAULT '',
+        doi              TEXT NOT NULL DEFAULT '',
+        order_count      INT DEFAULT 0,
+        complete_count   INT DEFAULT 0,
+        cancel_count     INT DEFAULT 0,
+        processing_count INT DEFAULT 0,
+        gmv              NUMERIC(15,2) DEFAULT 0,
+        driver_active    INT DEFAULT 0,
+        UNIQUE(create_date, create_hour, depot, region, doi)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_summary_date ON orders_summary(create_date)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS compression_log (
+        create_date    DATE PRIMARY KEY,
+        status         TEXT NOT NULL DEFAULT 'raw',
+        compressed_at  TIMESTAMPTZ,
+        raw_row_count  INT,
+        summary_rows   INT
+      )
+    `);
 
     // PBKDF2: 100000 iterations, SHA-256, 32 bytes salt, 64 bytes hash
     const adminRes = await client.query(`SELECT COUNT(*) FROM users`);

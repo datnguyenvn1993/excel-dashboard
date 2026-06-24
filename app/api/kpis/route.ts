@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initDB, db } from "@/lib/db";
 import { REGION_ORDER, parseRegions, buildRegionSql } from "@/lib/regions";
+import { isDateCompressed } from "@/lib/compress";
 
 export async function GET(req: NextRequest) {
   await initDB();
@@ -14,20 +15,21 @@ export async function GET(req: NextRequest) {
   const regionFilterSql = selectedRegions.length > 0
     ? "AND (" + regionCaseSql + ") IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
     : "";
+  const regionFilterSummarySql = selectedRegions.length > 0
+    ? "AND region IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
+    : "";
   const client = await db.connect();
   try {
     // Resolve effective hour: use import hour when no explicit hour filter
     let effectiveHour = hour;
     if (effectiveHour === null) {
       if (dateParam) {
-        // User selected a specific date: get max hour available for THAT date
         const maxHourRes = await client.query(
           "SELECT MAX(create_hour)::int as h FROM orders WHERE create_date = $1::date",
           [dateParam]
         );
         effectiveHour = maxHourRes.rows[0]?.h ?? null;
       } else {
-        // No date param: use last_import_at (today's latest import)
         const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
         const importAt = metaRes.rows[0]?.value;
         if (importAt) {
@@ -37,6 +39,8 @@ export async function GET(req: NextRequest) {
       }
     }
     const hourFilterSql = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
+    const hourFilterSummarySql = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
+
     // Resolve target date
     let targetDate: string;
     if (dateParam) {
@@ -60,7 +64,12 @@ export async function GET(req: NextRequest) {
     d7Obj.setUTCDate(d7Obj.getUTCDate() - 7);
     const d7DateStr = d7Obj.toISOString().slice(0, 10);
 
-    const buildNatQuery = () => `
+    // Check compression status
+    const todayCompressed = await isDateCompressed(client, targetDate);
+    const d7Compressed = await isDateCompressed(client, d7DateStr);
+
+    // --- Build query functions ---
+    const buildNatQueryRaw = () => `
       WITH deduped AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
           id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city, cancel_by
@@ -76,8 +85,18 @@ export async function GET(req: NextRequest) {
         COUNT(DISTINCT NULLIF(TRIM(sap_profile_id),''))::int as tx_active
       FROM deduped
     `;
+    const buildNatQuerySummary = () => `
+      SELECT
+        COALESCE(SUM(order_count),0)::int as total,
+        COALESCE(SUM(gmv),0)::float as gmv,
+        COALESCE(SUM(complete_count),0)::int as complete,
+        COALESCE(SUM(cancel_count),0)::int as cancel,
+        COALESCE(SUM(processing_count),0)::int as processing,
+        COALESCE(SUM(driver_active),0)::int as tx_active
+      FROM orders_summary WHERE create_date = $1::date ${hourFilterSummarySql} ${regionFilterSummarySql}
+    `;
 
-    const buildRegQuery = () => `
+    const buildRegQueryRaw = () => `
       WITH deduped AS (
         SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
           id, order_id, status, total_pay, sap_profile_id, create_date, pickup_city, cancel_by
@@ -94,13 +113,31 @@ export async function GET(req: NextRequest) {
         COUNT(DISTINCT NULLIF(TRIM(sap_profile_id),''))::int as tx_active
       FROM deduped GROUP BY 1 ORDER BY 1
     `;
+    const buildRegQuerySummary = () => `
+      SELECT
+        region,
+        COALESCE(SUM(order_count),0)::int as total,
+        COALESCE(SUM(gmv),0)::float as gmv,
+        COALESCE(SUM(complete_count),0)::int as complete,
+        COALESCE(SUM(cancel_count),0)::int as cancel,
+        COALESCE(SUM(processing_count),0)::int as processing,
+        COALESCE(SUM(driver_active),0)::int as tx_active
+      FROM orders_summary WHERE create_date = $1::date ${hourFilterSummarySql} ${regionFilterSummarySql}
+      GROUP BY region ORDER BY region
+    `;
 
     const [nat, reg, natD7, regD7, dates, meta] = await Promise.all([
-      client.query(buildNatQuery(), [targetDate]),
-      client.query(buildRegQuery(), [targetDate]),
-      client.query(buildNatQuery(), [d7DateStr]),
-      client.query(buildRegQuery(), [d7DateStr]),
-      client.query("SELECT DISTINCT create_date::text as date FROM orders ORDER BY 1 DESC"),
+      client.query(todayCompressed ? buildNatQuerySummary() : buildNatQueryRaw(), [targetDate]),
+      client.query(todayCompressed ? buildRegQuerySummary() : buildRegQueryRaw(), [targetDate]),
+      client.query(d7Compressed ? buildNatQuerySummary() : buildNatQueryRaw(), [d7DateStr]),
+      client.query(d7Compressed ? buildRegQuerySummary() : buildRegQueryRaw(), [d7DateStr]),
+      client.query(`
+        SELECT DISTINCT d::text as date FROM (
+          SELECT create_date as d FROM orders
+          UNION
+          SELECT create_date as d FROM orders_summary
+        ) sub ORDER BY 1 DESC
+      `),
       client.query("SELECT value FROM metadata WHERE key = 'last_import_at'"),
     ]);
 

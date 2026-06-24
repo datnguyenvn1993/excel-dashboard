@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { buildRegionSql, citiesForRegions, parseRegions } from "@/lib/regions";
+import { buildRegionSql, parseRegions } from "@/lib/regions";
+import { isDateCompressed } from "@/lib/compress";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -8,7 +9,13 @@ export async function GET(req: NextRequest) {
 
   const client = await db.connect();
   try {
-    const maxRes = await client.query(`SELECT MAX(create_date)::text as max_date FROM orders`);
+    const maxRes = await client.query(`
+      SELECT MAX(d)::text as max_date FROM (
+        SELECT MAX(create_date) as d FROM orders
+        UNION ALL
+        SELECT MAX(create_date) as d FROM orders_summary
+      ) sub
+    `);
     const dateParam = searchParams.get("date");
     const maxDate: string | null = dateParam || (maxRes.rows[0]?.max_date ?? null);
 
@@ -20,69 +27,97 @@ export async function GET(req: NextRequest) {
     d7.setDate(d7.getDate() - 7);
     const d7Str = d7.toISOString().slice(0, 10);
 
-    // Build city filter if regions selected
     const regionCaseSql = buildRegionSql("pickup_city");
     const regionFilterSql = selectedRegions.length > 0
       ? "AND (" + regionCaseSql + ") IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
       : "";
+    const regionFilterSummarySql = selectedRegions.length > 0
+      ? "AND region IN (" + selectedRegions.map(r => "'" + r.replace(/'/g, "''") + "'").join(",") + ")"
+      : "";
 
-    const [hourlyRes, dailyRes] = await Promise.all([
-      client.query(
-        `WITH deduped AS (
-           SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
-             create_date, create_hour, total_pay, pickup_city, status
-           FROM orders
-           WHERE create_date IN ($1::date, $2::date) AND create_hour IS NOT NULL
-           ${regionFilterSql}
-           ORDER BY COALESCE(NULLIF(order_id,''), id::text)
-         )
-         SELECT create_date::text, create_hour,
-           (${regionCaseSql}) as region,
-           COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
-           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as trip
-         FROM deduped
-         GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
-        [maxDate, d7Str]
-      ),
-      client.query(
-        `WITH daily_agg AS (
+    const todayCompressed = await isDateCompressed(client, maxDate);
+    const d7Compressed = await isDateCompressed(client, d7Str);
+
+    // --- Hourly data ---
+    type HourlyRow = { create_date: string; create_hour: number; region: string | null; gmv: number; trip: number };
+    const hourlyRows: HourlyRow[] = [];
+
+    const rawHourlySql = `
+      WITH deduped AS (
+        SELECT DISTINCT ON (COALESCE(NULLIF(order_id,''), id::text))
+          create_date, create_hour, total_pay, pickup_city, status
+        FROM orders
+        WHERE create_date = $1::date AND create_hour IS NOT NULL
+        ${regionFilterSql}
+        ORDER BY COALESCE(NULLIF(order_id,''), id::text)
+      )
+      SELECT create_date::text, create_hour,
+        (${regionCaseSql}) as region,
+        COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
+        COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as trip
+      FROM deduped
+      GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+    `;
+    const summaryHourlySql = `
+      SELECT create_date::text, create_hour, region,
+        COALESCE(SUM(gmv),0)::float as gmv,
+        COALESCE(SUM(complete_count),0)::int as trip
+      FROM orders_summary
+      WHERE create_date = $1::date ${regionFilterSummarySql}
+      GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+    `;
+
+    // Today hourly
+    const todayHourly = await client.query(todayCompressed ? summaryHourlySql : rawHourlySql, [maxDate]);
+    hourlyRows.push(...todayHourly.rows);
+
+    // D-7 hourly
+    const d7Hourly = await client.query(d7Compressed ? summaryHourlySql : rawHourlySql, [d7Str]);
+    hourlyRows.push(...d7Hourly.rows);
+
+    // --- Daily data (UNION raw + summary) ---
+    const dailyRes = await client.query(
+      `WITH daily_agg AS (
+         SELECT create_date,
+           SUM(cc)::int as complete, SUM(pc)::int as processing,
+           SUM(canc)::int as cancel, COALESCE(SUM(g),0)::float as gmv
+         FROM (
            SELECT create_date,
-             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as complete,
-             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress')::int as processing,
-             COUNT(*) FILTER (WHERE UPPER(TRIM(cancel_by)) = 'DRIVER')::int as cancel,
-             COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
+             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%') as cc,
+             COUNT(*) FILTER (WHERE LOWER(status) LIKE 'process%' OR LOWER(status)='in progress') as pc,
+             COUNT(*) FILTER (WHERE UPPER(TRIM(cancel_by)) = 'DRIVER') as canc,
+             SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END) as g
            FROM orders
            WHERE create_date >= $1::date - 17
            AND SPLIT_PART(TRIM(CAST(depot AS TEXT)), '.', 1) = '1032'
            ${regionFilterSql}
            GROUP BY create_date
-         )
-         SELECT d1.create_date::text as date,
-           COALESCE(d1.complete,0) as complete,
-           COALESCE(d1.processing,0) as processing,
-           COALESCE(d1.cancel,0) as cancel,
-           COALESCE(d1.gmv,0) as gmv,
-           COALESCE(d2.complete,0) as complete_d7,
-           COALESCE(d2.processing,0) as processing_d7,
-           COALESCE(d2.cancel,0) as cancel_d7,
-           COALESCE(d2.gmv,0) as gmv_d7
-         FROM daily_agg d1
-         LEFT JOIN daily_agg d2 ON d1.create_date = d2.create_date + 7
-         WHERE d1.create_date >= $1::date - 10
-         ORDER BY d1.create_date`,
-        [maxDate]
-      ),
-    ]);
+           UNION ALL
+           SELECT create_date,
+             SUM(complete_count), SUM(processing_count), SUM(cancel_count), SUM(gmv)
+           FROM orders_summary
+           WHERE create_date >= $1::date - 17 AND depot = '1032'
+           ${regionFilterSummarySql}
+           GROUP BY create_date
+         ) combined
+         GROUP BY create_date
+       )
+       SELECT create_date::text as date,
+         COALESCE(complete,0) as complete, COALESCE(processing,0) as processing,
+         COALESCE(cancel,0) as cancel, COALESCE(gmv,0) as gmv
+       FROM daily_agg
+       WHERE create_date >= $1::date - 10
+       ORDER BY create_date`,
+      [maxDate]
+    );
 
+    // --- Build hourly output ---
     const hourlyData: any[] = Array.from({ length: 24 }, (_, h) => ({
       hour: String(h).padStart(2, "0") + "h",
-      today: 0,
-      d7: 0,
-      trip_today: 0,
-      trip_d7: 0
+      today: 0, d7: 0, trip_today: 0, trip_d7: 0
     }));
 
-    for (const row of hourlyRes.rows) {
+    for (const row of hourlyRows) {
       const h = row.create_hour;
       if (h < 0 || h > 23) continue;
       const gmvMil = row.gmv / 1_000_000;
@@ -117,7 +152,7 @@ export async function GET(req: NextRequest) {
       todayDate: maxDate,
       d7Date: d7Str,
       hourly: hourlyData,
-      daily: dailyRes.rows.map(r => {
+      daily: dailyRes.rows.map((r: any) => {
         const d = new Date(r.date + "T00:00:00Z");
         const dayOfWeek = d.getUTCDay();
         return {
