@@ -39,52 +39,45 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <header className="border-b backdrop-blur sticky top-0 z-40" style={{ background: "#27BDBE", borderColor: "#22a7a8" }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 19v-6a2 2 0 00-2-2V5a2 2 0 00-2 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <span className="font-semibold text-white">Vận hành Platform Dashboard</span>
-          </div>
-          <div className="flex items-center gap-3">
-            {user.role === "admin" && (
-              <a href="/admin" className="text-sm border border-yellow-500/50 hover:bg-yellow-500/10 text-cyan-100 px-3 py-1.5 rounded-lg transition-colors mr-2 shadow-sm">
-                Quản lý User
-              </a>
-            )}
-            <div className="text-sm text-cyan-50 flex flex-col items-end mr-2">
-              <span className="font-medium text-white">{user.display_name || user.username}</span>
-              <span className="text-xs opacity-70 capitalize text-cyan-200">{user.role}</span>
-            </div>
-
-            <button onClick={() => setShowPasswordModal(true)}
-              className="text-sm bg-cyan-700 hover:bg-cyan-600 text-cyan-50 px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors font-medium shadow-sm">
-              Đổi mật khẩu
-            </button>
-            <button onClick={() => setShowTutorial(true)}
-              className="px-3 py-1.5 text-sm rounded-full font-bold border-2 transition-colors bg-red-600/10 hover:bg-red-600/20 border-red-500 text-red-100 shadow-sm"
-              title="Hướng dẫn sử dụng"
-            >
-              ?
-            </button>
-            <button onClick={handleLogout}
-              className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors mr-3 font-medium shadow-sm">
-              Đăng xuất
-            </button>
-            <button onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors font-medium shadow-sm">
-              <Upload className="w-4 h-4" /> Import file
-            </button>
-          </div>
-        </div>
-      </header>
-
       <main className="w-full">
-        <Dashboard onImportNew={() => setShowModal(true)} refreshKey={refreshKey} currentUser={user} />
+        <Dashboard
+          onImportNew={() => setShowModal(true)}
+          refreshKey={refreshKey}
+          currentUser={user}
+          headerActions={
+            <>
+              {user.role === "admin" && (
+                <a href="/admin" className="text-sm border border-yellow-500/50 hover:bg-yellow-500/10 text-cyan-100 px-3 py-1.5 rounded-lg transition-colors mr-2 shadow-sm">
+                  Quản lý User
+                </a>
+              )}
+              <div className="text-sm text-cyan-50 flex flex-col items-end mr-2">
+                <span className="font-medium text-white">{user.display_name || user.username}</span>
+                <span className="text-xs opacity-70 capitalize text-cyan-200">{user.role}</span>
+              </div>
+              <button onClick={() => setShowPasswordModal(true)}
+                className="text-sm bg-cyan-700 hover:bg-cyan-600 text-cyan-50 px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors font-medium shadow-sm">
+                Đổi mật khẩu
+              </button>
+              <button onClick={() => setShowTutorial(true)}
+                className="px-3 py-1.5 text-sm rounded-full font-bold border-2 transition-colors bg-red-600/10 hover:bg-red-600/20 border-red-500 text-red-100 shadow-sm"
+                title="Hướng dẫn sử dụng"
+              >
+                ?
+              </button>
+              <button onClick={handleLogout}
+                className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors mr-3 font-medium shadow-sm">
+                Đăng xuất
+              </button>
+              {/* Note: In Dashboard.tsx there is already an 'Import' button, but we can keep this for redundancy if wanted or remove it. 
+                   The user said "dồn cục này lên trên đó", implying moving the header. Let's keep it exactly as it was. */}
+              <button onClick={() => setShowModal(true)}
+                className="flex items-center gap-1.5 text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors font-medium shadow-sm">
+                <Upload className="w-4 h-4" /> Import file
+              </button>
+            </>
+          }
+        />
       </main>
 
       {showPasswordModal && (

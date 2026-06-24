@@ -48,6 +48,7 @@ interface DashboardProps {
   onImportNew?: () => void;
   refreshKey?: number;
   currentUser?: { username: string, role: string, display_name: string } | null;
+  headerActions?: React.ReactNode;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -248,7 +249,7 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: DashboardProps) {
+export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, headerActions }: DashboardProps) {
   const [isDark, setIsDark] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -529,12 +530,12 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
       <div className={`sticky top-0 z-20 border-b px-6 py-3 shadow-sm`} style={{ background: isDark ? "#1a8a8b" : "#27BDBE", borderColor: isDark ? "#178384" : "#22a7a8" }}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
-            <h1 className={`text-sm font-bold uppercase tracking-wide ${textPri}`}>📊 BÁO CÁO VẬN HÀNH PLATFORM</h1>
-            <p className={`text-xs mt-0.5 ${textSec}`}>
+            <h1 className={`text-sm font-bold uppercase tracking-wide text-white`}>📊 BÁO CÁO VẬN HÀNH PLATFORM</h1>
+            <p className={`text-xs mt-0.5 text-cyan-50`}>
               {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}${selectedHour !== null ? ` · 00:00–${String(selectedHour).padStart(2, "0")}:00` : (kpiData?.importHour != null ? ` · 00:00–${String(kpiData.importHour).padStart(2, "0")}:00` : "")}`}
             </p>
             {importTimeStr && (
-              <p className={`text-xs ${importIsStale ? "text-red-500" : (isDark ? "text-gray-500" : "text-gray-400")}`}>
+              <p className={`text-xs ${importIsStale ? "text-red-200" : "text-cyan-100"}`}>
                 Cập nhật lúc: {importTimeStr} {importRelStr}
               </p>
             )}
@@ -589,8 +590,13 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                 className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
                 {importingDrivers ? "Đang import..." : "Cập nhật ds tx"}
               </button>
-              {driverInfo && <span className={"text-xs " + (isDark ? "text-gray-400" : "text-gray-500")}>({driverInfo.total} tx)</span>}
+              {driverInfo && <span className="text-xs text-cyan-50">({driverInfo.total} tx)</span>}
             </div>
+            {headerActions && (
+              <div className="flex items-center gap-3 pl-3 ml-2 border-l border-white/20">
+                {headerActions}
+              </div>
+            )}
           </div>
         </div>
       </div>
