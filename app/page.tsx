@@ -2,10 +2,12 @@
 import { useState, useEffect } from "react";
 import Dashboard from "@/components/Dashboard";
 import FileUpload from "@/components/FileUpload";
+import { TutorialModal } from "@/components/TutorialModal";
 import { Upload } from "lucide-react";
 
 export default function Home() {
   const [showModal, setShowModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<{ username: string, role: string, display_name: string } | null>(null);
@@ -62,6 +64,12 @@ export default function Home() {
             <button onClick={() => setShowPasswordModal(true)}
               className="text-sm bg-cyan-700 hover:bg-cyan-600 text-cyan-50 px-3 py-1.5 rounded-lg transition-colors font-medium">
               Đổi mật khẩu
+            </button>
+            <button onClick={() => setShowTutorial(true)}
+              className="px-3 py-1.5 text-sm rounded-full font-bold border transition-colors bg-white/10 hover:bg-white/20 border-white/20 text-white shadow-sm"
+              title="Hướng dẫn sử dụng"
+            >
+              ?
             </button>
             <button onClick={handleLogout}
               className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition-colors mr-3 font-medium">
@@ -134,6 +142,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
     </div>
   );
 }

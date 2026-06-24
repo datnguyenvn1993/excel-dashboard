@@ -24,7 +24,7 @@ export function TutorialModal({ onClose }: { onClose: () => void }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl relative">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-[90vw] w-full h-[90vh] flex flex-col shadow-2xl relative">
 
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6 shrink-0">
