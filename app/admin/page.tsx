@@ -36,7 +36,7 @@ export default function AdminPage() {
             const res = await fetch("/api/compress");
             if (!res.ok) throw new Error("Failed to fetch logs");
             const data = await res.json();
-            setLogs(data.logs);
+            setLogs(data.dates || []);
         } catch (e: any) {
             console.error(e);
         }
@@ -268,45 +268,51 @@ export default function AdminPage() {
                             </p>
 
                             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
-                                {logs.map(log => (
-                                    <div key={log.create_date} className={`p-4 rounded-lg flex flex-col gap-2 ${log.status === 'compressed' ? 'bg-slate-800 border-l-4 border-cyan-500' : 'bg-slate-800/50 border border-slate-700'}`}>
-                                        <div className="flex justify-between items-center">
-                                            <span className="font-mono font-bold text-lg">{new Date(log.create_date).toLocaleDateString('vi-VN')}</span>
-                                            {log.status === 'compressed' ? (
-                                                <span className="text-xs bg-cyan-900/50 text-cyan-300 px-2 py-1 rounded">Đã nén</span>
-                                            ) : (
-                                                <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">Chưa nén</span>
+                                {logs.map(log => {
+                                    // format log.date if it's full ISO string
+                                    const dateStr = typeof log.date === 'string' ? log.date.split('T')[0] : log.date;
+                                    return (
+                                        <div key={dateStr} className={`p-4 rounded-lg flex flex-col gap-2 ${log.status === 'compressed' || log.status === 'recompress' ? 'bg-slate-800 border-l-4 border-cyan-500' : 'bg-slate-800/50 border border-slate-700'}`}>
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-mono font-bold text-lg">{new Date(log.date).toLocaleDateString('vi-VN')}</span>
+                                                {log.status === 'compressed' ? (
+                                                    <span className="text-xs bg-cyan-900/50 text-cyan-300 px-2 py-1 rounded">Đã nén</span>
+                                                ) : log.status === 'recompress' ? (
+                                                    <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded">Cần nén lại</span>
+                                                ) : (
+                                                    <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">Chưa nén</span>
+                                                )}
+                                            </div>
+
+                                            {log.status === 'raw' && (
+                                                <button
+                                                    onClick={() => handleCompress(dateStr)}
+                                                    disabled={compressingDate === dateStr}
+                                                    className="mt-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white py-1.5 rounded"
+                                                >
+                                                    {compressingDate === dateStr ? "Đang nén..." : "Nén dữ liệu ngày này"}
+                                                </button>
+                                            )}
+
+                                            {log.status === 'recompress' && (
+                                                <button
+                                                    onClick={() => handleReCompress(dateStr)}
+                                                    disabled={compressingDate === dateStr}
+                                                    className="mt-2 text-xs bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-slate-300 py-1.5 rounded border border-slate-600"
+                                                >
+                                                    {compressingDate === dateStr ? "Đang nén lại..." : "Có dữ liệu thô mới, nén lại!"}
+                                                </button>
+                                            )}
+
+                                            {(log.status === 'compressed' || log.status === 'recompress') && (
+                                                <div className="text-xs text-slate-400 flex justify-between mt-1">
+                                                    <span>Raw: {log.prev_raw_count}</span>
+                                                    <span className="text-cyan-400">→ Summary: {log.summary_rows}</span>
+                                                </div>
                                             )}
                                         </div>
-
-                                        {log.status === 'raw' && (
-                                            <button
-                                                onClick={() => handleCompress(log.create_date)}
-                                                disabled={compressingDate === log.create_date}
-                                                className="mt-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white py-1.5 rounded"
-                                            >
-                                                {compressingDate === log.create_date ? "Đang nén..." : "Nén dữ liệu ngày này"}
-                                            </button>
-                                        )}
-
-                                        {log.status === 'compressed' && (
-                                            <button
-                                                onClick={() => handleReCompress(log.create_date)}
-                                                disabled={compressingDate === log.create_date}
-                                                className="mt-2 text-xs bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-slate-300 py-1.5 rounded"
-                                            >
-                                                {compressingDate === log.create_date ? "Đang nén lại..." : "Nén lại (nếu vừa import bù)"}
-                                            </button>
-                                        )}
-
-                                        {log.status === 'compressed' && (
-                                            <div className="text-xs text-slate-400 flex justify-between mt-1">
-                                                <span>Raw: {log.raw_row_count}</span>
-                                                <span className="text-cyan-400">→ Summary: {log.summary_rows}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 {logs.length === 0 && <p className="text-slate-500 text-sm text-center py-4">Chưa có lịch sử data</p>}
                             </div>
                         </div>
