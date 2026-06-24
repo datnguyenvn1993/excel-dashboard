@@ -537,7 +537,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
               {loading ? "Đang tải..." : isEmpty ? "Chưa có dữ liệu" : `${(natKPI?.total ?? 0).toLocaleString()} đơn · ${todayLabel}${selectedHour !== null ? ` · 00:00–${String(selectedHour).padStart(2, "0")}:00` : (kpiData?.importHour != null ? ` · 00:00–${String(kpiData.importHour).padStart(2, "0")}:00` : "")}`}
             </p>
             {importTimeStr && (
-              <p className={`text-xs ${importIsStale ? "text-red-200" : "text-cyan-100"}`}>
+              <p className={`text-xs ${importIsStale ? "text-red-600 font-bold" : "text-cyan-100"}`}>
                 Cập nhật lúc: {importTimeStr} {importRelStr}
               </p>
             )}
