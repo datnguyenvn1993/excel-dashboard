@@ -14,18 +14,34 @@ export async function GET(req: NextRequest) {
     const hourFilterSql = await (async () => {
       let h = hour;
       if (h === null) {
-        if (dateParam) {
-          // User selected a specific date: get max hour available for THAT date
+        const maxRes = await client.query(`SELECT MAX(create_date)::text as max_date FROM orders`);
+        const maxDate = maxRes.rows[0]?.max_date ?? null;
+        const targetDate = dateParam || maxDate;
+
+        let maxH = null;
+        if (targetDate) {
           const maxHourRes = await client.query(
             "SELECT MAX(create_hour)::int as h FROM orders WHERE create_date = $1::date",
-            [dateParam]
+            [targetDate]
           );
-          h = maxHourRes.rows[0]?.h ?? null;
-        } else {
-          // No date param: use last_import_at (today's latest import)
+          maxH = maxHourRes.rows[0]?.h ?? null;
+        }
+
+        if (targetDate && targetDate === maxDate) {
           const metaRes = await client.query("SELECT value FROM metadata WHERE key = 'last_import_at'");
           const importAt = metaRes.rows[0]?.value;
-          if (importAt) { const d = new Date(importAt); if (!isNaN(d.getTime())) h = ((d.getUTCHours() + 7) % 24) - 1; }
+          if (importAt) {
+            const d = new Date(importAt);
+            if (!isNaN(d.getTime())) {
+              const vnTime = new Date(d.getTime() + 7 * 3600 * 1000);
+              const vnDateStr = vnTime.toISOString().split('T')[0];
+              if (targetDate === vnDateStr) {
+                h = vnTime.getUTCHours() - 1;
+              } else { h = maxH; }
+            } else { h = maxH; }
+          } else { h = maxH; }
+        } else {
+          h = maxH;
         }
       }
       return h !== null ? `AND o.create_hour <= ${h}` : "";

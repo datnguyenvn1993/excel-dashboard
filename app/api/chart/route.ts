@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
          )
          SELECT create_date::text, create_hour,
            (${regionCaseSql}) as region,
-           COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv
+           COALESCE(SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END),0)::float as gmv,
+           COUNT(*) FILTER (WHERE LOWER(status) LIKE 'complete%')::int as trip
          FROM deduped
          GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
         [maxDate, d7Str]
@@ -76,22 +77,33 @@ export async function GET(req: NextRequest) {
     const hourlyData: any[] = Array.from({ length: 24 }, (_, h) => ({
       hour: String(h).padStart(2, "0") + "h",
       today: 0,
-      d7: 0
+      d7: 0,
+      trip_today: 0,
+      trip_d7: 0
     }));
 
     for (const row of hourlyRes.rows) {
       const h = row.create_hour;
       if (h < 0 || h > 23) continue;
       const gmvMil = row.gmv / 1_000_000;
+      const trip = row.trip || 0;
       const rName = row.region;
 
       if (row.create_date === maxDate) {
         hourlyData[h].today += gmvMil;
-        if (rName) hourlyData[h][rName] = (hourlyData[h][rName] || 0) + gmvMil;
+        hourlyData[h].trip_today += trip;
+        if (rName) {
+          hourlyData[h][rName] = (hourlyData[h][rName] || 0) + gmvMil;
+          hourlyData[h][rName + "_trip"] = (hourlyData[h][rName + "_trip"] || 0) + trip;
+        }
       }
       if (row.create_date === d7Str) {
         hourlyData[h].d7 += gmvMil;
-        if (rName) hourlyData[h][rName + "_d7"] = (hourlyData[h][rName + "_d7"] || 0) + gmvMil;
+        hourlyData[h].trip_d7 += trip;
+        if (rName) {
+          hourlyData[h][rName + "_d7"] = (hourlyData[h][rName + "_d7"] || 0) + gmvMil;
+          hourlyData[h][rName + "_trip_d7"] = (hourlyData[h][rName + "_trip_d7"] || 0) + trip;
+        }
       }
     }
 

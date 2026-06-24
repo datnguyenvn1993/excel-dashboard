@@ -274,6 +274,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set());
   const [showGmvRegionLines, setShowGmvRegionLines] = useState(false);
   const [hiddenGmvLines, setHiddenGmvLines] = useState<Set<string>>(new Set());
+  const [showTripRegionLines, setShowTripRegionLines] = useState(false);
+  const [hiddenTripLines, setHiddenTripLines] = useState<Set<string>>(new Set());
   const [driverInfo, setDriverInfo] = useState<{ total: number; lastImport: string | null } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const watermarkText = currentUser ? (currentUser.display_name || currentUser.username) : undefined;
@@ -284,6 +286,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   const nationalRef = useRef<HTMLDivElement>(null);
   const regionsRef = useRef<HTMLDivElement>(null);
   const hourlyRef = useRef<HTMLDivElement>(null);
+  const tripChartRef = useRef<HTMLDivElement>(null);
   const dailyRef = useRef<HTMLDivElement>(null);
   const teamReportRef = useRef<HTMLDivElement>(null);
   const driverChartRef = useRef<HTMLDivElement>(null);
@@ -396,6 +399,9 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
   }
   function toggleHiddenGmvLine(key: string) {
     setHiddenGmvLines(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+  function toggleHiddenTripLine(key: string) {
+    setHiddenTripLines(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
 
   async function handleResetConfirmed() {
@@ -697,6 +703,75 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
                         legendType="none"
                         strokeOpacity={hiddenGmvLines.has(region) ? 0.1 : 0.6}>
                         {!hiddenGmvLines.has(region) && <LabelList dataKey={region + "_d7"} position="bottom" style={{ fontSize: 9, fill: REGION_COLORS[i % REGION_COLORS.length] }} formatter={(v: number) => v > 0 ? Math.round(v) + "Tr" : ""} />}
+                      </Line>
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* ── Trip Hourly chart ─────────────────────────────────────────── */}
+          {chartData && (
+            <div ref={tripChartRef} className={`rounded-xl border overflow-hidden ${cardCls}`}>
+              <div className={`flex items-center justify-between px-4 py-3 ${isDark ? "bg-gray-800" : "bg-gray-50"}`}>
+                <h3 className={`text-sm font-semibold ${textPri}`}>
+                  📈 Số Trip theo giờ — <span className="text-blue-500">{selectedDate ? "Ngày lọc" : "Hôm nay"} ({todayShort})</span> vs <span className={textSec}>D-7 ({d7Short})</span>
+                </h3>
+                <div className="flex items-center gap-3">
+                  <div className={`flex rounded-lg border overflow-hidden text-xs ${isDark ? "border-gray-600" : "border-gray-300"}`}>
+                    <button onClick={() => { setShowTripRegionLines(false); setHiddenTripLines(new Set()); }}
+                      className={`px-3 py-1.5 ${!showTripRegionLines ? "bg-blue-600 text-white" : (isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100")}`}>
+                      Tổng
+                    </button>
+                    <button onClick={() => { setShowTripRegionLines(true); setHiddenTripLines(new Set()); }}
+                      className={`px-3 py-1.5 border-l ${isDark ? "border-gray-600" : "border-gray-300"} ${showTripRegionLines ? "bg-blue-600 text-white" : (isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100")}`}>
+                      Phân theo khu vực
+                    </button>
+                  </div>
+                  <ScreenshotBtn targetRef={tripChartRef} isDark={isDark} watermarkText={watermarkText} />
+                </div>
+              </div>
+              <div className={`p-4 ${isDark ? "bg-gray-900" : "bg-white"}`}>
+                <p className={`text-xs mb-4 ${textSec}`}>Đơn vị: Đơn</p>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={chartData.hourly} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={grid} />
+                    <XAxis dataKey="hour" tick={{ fontSize: 11, fill: tick }} tickFormatter={h => h} />
+                    <YAxis tick={{ fontSize: 11, fill: tick }} />
+                    <Tooltip contentStyle={{ background: isDark ? "#1f2937" : "#fff", border: "1px solid " + (isDark ? "#374151" : "#e5e7eb"), borderRadius: 8, fontSize: 12 }}
+                      formatter={(v: number, n: string) => [`${Math.round(v)} đơn`, String(n).replace("_trip_d7", " (D-7)").replace("_trip", "")]} />
+                    <Legend wrapperStyle={{ fontSize: 12, cursor: showTripRegionLines ? "pointer" : "default" }}
+                      onClick={showTripRegionLines ? (data: any) => { if (data.dataKey) toggleHiddenTripLine(String(data.dataKey)); } : undefined} />
+
+                    {!showTripRegionLines && (
+                      <Line type="monotone" dataKey="trip_today" name={`Hôm nay (${todayShort})`} stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                        <LabelList dataKey="trip_today" position="top" style={{ fontSize: 9, fill: isDark ? "#9ca3af" : "#374151" }} formatter={(v: number) => v > 0 ? Math.round(v) : ""} />
+                      </Line>
+                    )}
+                    {!showTripRegionLines && (
+                      <Line type="monotone" dataKey="trip_d7" name={`D-7 (${d7Short})`} stroke="#9ca3af" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 2 }} activeDot={{ r: 4 }}>
+                        <LabelList dataKey="trip_d7" position="bottom" style={{ fontSize: 9, fill: isDark ? "#9ca3af" : "#374151" }} formatter={(v: number) => v > 0 ? Math.round(v) : ""} />
+                      </Line>
+                    )}
+
+                    {showTripRegionLines && ALL_REGIONS.map((region, i) => (
+                      <Line key={region + "_trip"} type="monotone" dataKey={region + "_trip"} name={region}
+                        stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2.5}
+                        dot={{ r: 3 }} activeDot={{ r: 5 }}
+                        hide={hiddenTripLines.has(region + "_trip")}
+                        strokeOpacity={hiddenTripLines.has(region + "_trip") ? 0.2 : 1}>
+                        {!hiddenTripLines.has(region + "_trip") && <LabelList dataKey={region + "_trip"} position="top" style={{ fontSize: 9, fill: REGION_COLORS[i % REGION_COLORS.length] }} formatter={(v: number) => v > 0 ? Math.round(v) : ""} />}
+                      </Line>
+                    ))}
+                    {showTripRegionLines && ALL_REGIONS.map((region, i) => (
+                      <Line key={region + "_trip_d7"} type="monotone" dataKey={region + "_trip_d7"} name={region + "_trip_d7"}
+                        stroke={REGION_COLORS[i % REGION_COLORS.length]} strokeWidth={2} strokeDasharray="6 3"
+                        dot={{ r: 2 }} activeDot={{ r: 4 }}
+                        hide={hiddenTripLines.has(region + "_trip")}
+                        legendType="none"
+                        strokeOpacity={hiddenTripLines.has(region + "_trip") ? 0.1 : 0.6}>
+                        {!hiddenTripLines.has(region + "_trip") && <LabelList dataKey={region + "_trip_d7"} position="bottom" style={{ fontSize: 9, fill: REGION_COLORS[i % REGION_COLORS.length] }} formatter={(v: number) => v > 0 ? Math.round(v) : ""} />}
                       </Line>
                     ))}
                   </LineChart>
