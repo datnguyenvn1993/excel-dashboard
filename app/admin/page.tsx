@@ -21,7 +21,7 @@ export default function AdminPage() {
 
     const checkDbSize = async () => {
         try {
-            const res = await fetch("/api/db-size");
+            const res = await fetch("/api/db-size", { cache: "no-store", next: { revalidate: 0 } });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
             setDbStats(data);
