@@ -52,7 +52,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             {user.role === "admin" && (
-              <a href="/admin" className="text-sm border border-cyan-500/30 hover:bg-cyan-500/10 text-cyan-100 px-3 py-1.5 rounded-lg transition-colors mr-2">
+              <a href="/admin" className="text-sm border border-yellow-500/50 hover:bg-yellow-500/10 text-cyan-100 px-3 py-1.5 rounded-lg transition-colors mr-2 shadow-sm">
                 Quản lý User
               </a>
             )}
@@ -62,21 +62,21 @@ export default function Home() {
             </div>
 
             <button onClick={() => setShowPasswordModal(true)}
-              className="text-sm bg-cyan-700 hover:bg-cyan-600 text-cyan-50 px-3 py-1.5 rounded-lg transition-colors font-medium">
+              className="text-sm bg-cyan-700 hover:bg-cyan-600 text-cyan-50 px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors font-medium shadow-sm">
               Đổi mật khẩu
             </button>
             <button onClick={() => setShowTutorial(true)}
-              className="px-3 py-1.5 text-sm rounded-full font-bold border transition-colors bg-white/10 hover:bg-white/20 border-white/20 text-white shadow-sm"
+              className="px-3 py-1.5 text-sm rounded-full font-bold border-2 transition-colors bg-red-600/10 hover:bg-red-600/20 border-red-500 text-red-100 shadow-sm"
               title="Hướng dẫn sử dụng"
             >
               ?
             </button>
             <button onClick={handleLogout}
-              className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition-colors mr-3 font-medium">
+              className="text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors mr-3 font-medium shadow-sm">
               Đăng xuất
             </button>
             <button onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
+              className="flex items-center gap-1.5 text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg border border-yellow-500/50 transition-colors font-medium shadow-sm">
               <Upload className="w-4 h-4" /> Import file
             </button>
           </div>
