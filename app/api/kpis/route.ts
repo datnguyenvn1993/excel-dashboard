@@ -25,7 +25,11 @@ export async function GET(req: NextRequest) {
     if (effectiveHour === null) {
       if (dateParam) {
         const maxHourRes = await client.query(
-          "SELECT MAX(create_hour)::int as h FROM orders WHERE create_date = $1::date",
+          `SELECT MAX(h)::int as h FROM (
+             SELECT MAX(create_hour) as h FROM orders WHERE create_date = $1::date
+             UNION ALL
+             SELECT MAX(create_hour) as h FROM orders_summary WHERE create_date = $1::date
+           ) sub`,
           [dateParam]
         );
         effectiveHour = maxHourRes.rows[0]?.h ?? null;
@@ -46,7 +50,13 @@ export async function GET(req: NextRequest) {
     if (dateParam) {
       targetDate = dateParam;
     } else {
-      const res = await client.query("SELECT MAX(create_date)::text as d FROM orders");
+      const res = await client.query(`
+        SELECT MAX(d)::text as d FROM (
+          SELECT MAX(create_date) as d FROM orders
+          UNION ALL
+          SELECT MAX(create_date) as d FROM orders_summary
+        ) sub
+      `);
       targetDate = res.rows[0]?.d ?? "";
     }
     if (!targetDate) {
