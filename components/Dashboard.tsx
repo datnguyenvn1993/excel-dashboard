@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ComposedChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from "recharts";
+import { TutorialModal } from "./TutorialModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface KPIResult {
@@ -250,6 +251,7 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: DashboardProps) {
   const [isDark, setIsDark] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [tablePage, setTablePage] = useState(0);
@@ -524,6 +526,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
           message={`Bạn có chắc muốn xóa ${confirm.count.toLocaleString()} dòng đã chọn?`}
           onConfirm={handleDeleteRowsConfirmed} onCancel={() => setConfirm(null)} />
       )}
+      {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className={`sticky top-0 z-20 border-b px-6 py-3 shadow-sm`} style={{ background: isDark ? "#1a8a8b" : "#27BDBE", borderColor: isDark ? "#178384" : "#22a7a8" }}>
@@ -574,6 +577,12 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser }: 
             <button onClick={() => setIsDark(v => !v)}
               className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-yellow-400 hover:bg-gray-700" : "border-gray-300 text-gray-600 hover:bg-gray-100"}`}>
               {isDark ? "☀️" : "🌙"}
+            </button>
+            <button onClick={() => setShowTutorial(true)}
+              className={`px-3 py-1.5 text-sm rounded-full font-bold border transition-colors ${isDark ? "border-cyan-600 text-cyan-400 hover:bg-cyan-900/50" : "border-cyan-600 text-cyan-600 hover:bg-cyan-50"}`}
+              title="Hướng dẫn sử dụng"
+            >
+              ?
             </button>
             <button onClick={onImportNew}
               className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-gray-300 hover:bg-gray-700" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
