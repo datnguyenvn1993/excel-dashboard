@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-const D10 = `create_date >= (SELECT COALESCE(MAX(create_date)-INTERVAL '10 days','2000-01-01'::date) FROM orders)`;
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const page = Math.max(0, parseInt(searchParams.get("page") ?? "0"));
@@ -19,15 +17,28 @@ export async function GET(req: NextRequest) {
       if (importAt) { const d = new Date(importAt); if (!isNaN(d.getTime())) effectiveHour = ((d.getUTCHours() + 7) % 24) - 1; }
     }
     const hourFilter = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
+
+    // Calculate MAX date from both tables
+    const maxRes = await client.query(`
+      SELECT MAX(d)::date as max_date FROM (
+        SELECT MAX(create_date) as d FROM orders
+        UNION ALL
+        SELECT MAX(create_date) as d FROM orders_summary
+      ) sub
+    `);
+    const maxDate = maxRes.rows[0]?.max_date || '2000-01-01';
+
+    const d10Sql = `create_date >= ($1::date - INTERVAL '10 days')`;
+
     const [dataRes, countRes] = await Promise.all([
       client.query(
         `SELECT id, order_id, status, depot, total_pay::float, pickup_city,
                 create_date::text, create_hour, sap_profile_id, distance
-         FROM orders WHERE ${D10} ${hourFilter}
-         ORDER BY create_date DESC, id DESC LIMIT $1 OFFSET $2`,
-        [limit, offset]
+         FROM orders WHERE ${d10Sql} ${hourFilter}
+         ORDER BY create_date DESC, id DESC LIMIT $2 OFFSET $3`,
+        [maxDate, limit, offset]
       ),
-      client.query(`SELECT COUNT(*)::int as total FROM orders WHERE ${D10} ${hourFilter}`),
+      client.query(`SELECT COUNT(*)::int as total FROM orders WHERE ${d10Sql} ${hourFilter}`, [maxDate]),
     ]);
     return NextResponse.json({
       rows: dataRes.rows,

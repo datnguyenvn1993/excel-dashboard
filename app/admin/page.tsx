@@ -260,12 +260,49 @@ export default function AdminPage() {
 
                     <div className="lg:col-span-1">
                         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-                            <h2 className="text-lg font-bold mb-2 flex items-center gap-2">
-                                🗜️ Nén dữ liệu (Storage Optimize)
-                            </h2>
-                            <p className="text-sm text-slate-400 mb-4">
-                                Giảm kích thước database bằng cách tổng hợp dữ liệu cũ thành summary và xóa dòng thô.
-                            </p>
+                            <div className="flex items-center justify-between mb-4">
+                                <div>
+                                    <h2 className="text-lg font-bold flex items-center gap-2">
+                                        🗜️ Nén dữ liệu (Optimize)
+                                    </h2>
+                                    <p className="text-sm text-slate-400 mt-1">
+                                        Giảm kích thước DB bằng cách tổng hợp dữ liệu cũ thành summary.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const compressibleDates = logs.filter(l => l.status === 'raw' || l.status === 'recompress').map(l => {
+                                            return typeof l.date === 'string' ? l.date.split('T')[0] : l.date;
+                                        });
+                                        if (compressibleDates.length === 0) {
+                                            alert("Không có ngày nào cần nén bớt cmnr!");
+                                            return;
+                                        }
+                                        if (!confirm(`Nén hàng loạt ${compressibleDates.length} ngày? Hành động này có thể mất vài phút.`)) return;
+                                        setCompressingDate("BATCH");
+                                        try {
+                                            const res = await fetch("/api/compress", {
+                                                method: "POST",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ dates: compressibleDates, forceRefill: true })
+                                            });
+                                            const data = await res.json();
+                                            if (!res.ok) throw new Error(data.error);
+                                            alert(`Đã nén xong ${compressibleDates.length} ngày!`);
+                                            fetchLogs();
+                                            if (showDbModal) checkDbSize();
+                                        } catch (e: any) {
+                                            alert("Lỗi nén hàng loạt: " + e.message);
+                                        } finally {
+                                            setCompressingDate(null);
+                                        }
+                                    }}
+                                    disabled={compressingDate !== null}
+                                    className="bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 text-white text-sm font-semibold px-4 py-2 rounded shadow shrink-0"
+                                >
+                                    {compressingDate === "BATCH" ? "Đang xử lý..." : "Nén tất cả"}
+                                </button>
+                            </div>
 
                             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
                                 {logs.map(log => {
