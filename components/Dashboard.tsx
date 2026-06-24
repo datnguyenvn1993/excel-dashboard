@@ -527,8 +527,10 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
       )}
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className={`sticky top-0 z-20 border-b px-6 py-3 shadow-sm`} style={{ background: isDark ? "#1a8a8b" : "#27BDBE", borderColor: isDark ? "#178384" : "#22a7a8" }}>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className={`sticky top-0 z-20 border-b px-6 py-3 shadow-sm flex flex-col gap-3`} style={{ background: isDark ? "#1a8a8b" : "#27BDBE", borderColor: isDark ? "#178384" : "#22a7a8" }}>
+
+        {/* Row 1: Title & Header Actions */}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <h1 className={`text-sm font-bold uppercase tracking-wide text-white`}>📊 BÁO CÁO VẬN HÀNH PLATFORM</h1>
             <p className={`text-xs mt-0.5 text-cyan-50`}>
@@ -540,63 +542,65 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Date */}
-            {availDates.length > 0 && (
-              <select value={selectedDate} onChange={e => handleDateChange(e.target.value)}
-                className={`text-xs px-2 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}>
-                {availDates.map(d => (
-                  <option key={d} value={d}>{new Date(d + "T00:00:00").toLocaleDateString("vi-VN")}</option>
-                ))}
-              </select>
-            )}
-            {/* Hour */}
-            <select value={selectedHour ?? ""} onChange={e => handleHourChange(e.target.value === "" ? null : parseInt(e.target.value, 10))}
+          {headerActions && (
+            <div className="flex items-center gap-3">
+              {headerActions}
+            </div>
+          )}
+        </div>
+
+        {/* Row 2: Filters & Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Date */}
+          {availDates.length > 0 && (
+            <select value={selectedDate} onChange={e => handleDateChange(e.target.value)}
               className={`text-xs px-2 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}>
-              <option value="">Cả ngày</option>
-              {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+              {availDates.map(d => (
+                <option key={d} value={d}>{new Date(d + "T00:00:00").toLocaleDateString("vi-VN")}</option>
               ))}
             </select>
-            {/* Region */}
-            <div className={`flex items-center gap-1 text-xs ${textSec}`}>
-              <span>Khu vực:</span>
-              <button onClick={() => { setSelectedRegions([]); fetchAll(selectedDate, [], selectedHour); }}
-                className={`px-2 py-1 rounded border ${selectedRegions.length === 0 ? "bg-blue-600 border-blue-600 text-white" : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
-                Tất cả
+          )}
+          {/* Hour */}
+          <select value={selectedHour ?? ""} onChange={e => handleHourChange(e.target.value === "" ? null : parseInt(e.target.value, 10))}
+            className={`text-xs px-2 py-1.5 rounded-lg border ${isDark ? "bg-gray-700 border-gray-600 text-gray-200" : "bg-white border-gray-300 text-gray-700"}`}>
+            <option value="">Cả ngày</option>
+            {Array.from({ length: 24 }, (_, i) => (
+              <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+            ))}
+          </select>
+          {/* Region */}
+          <div className={`flex items-center gap-1 text-xs ${textSec}`}>
+            <span>Khu vực:</span>
+            <button onClick={() => { setSelectedRegions([]); fetchAll(selectedDate, [], selectedHour); }}
+              className={`px-2 py-1 rounded border ${selectedRegions.length === 0 ? "bg-blue-600 border-blue-600 text-white" : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
+              Tất cả
+            </button>
+            {ALL_REGIONS.map(r => (
+              <button key={r} onClick={() => toggleRegion(r)}
+                className={`px-2 py-1 rounded border ${selectedRegions.includes(r) ? "bg-blue-600 border-blue-600 text-white" : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
+                {REGION_EMOJIS[r]} {r}
               </button>
-              {ALL_REGIONS.map(r => (
-                <button key={r} onClick={() => toggleRegion(r)}
-                  className={`px-2 py-1 rounded border ${selectedRegions.includes(r) ? "bg-blue-600 border-blue-600 text-white" : (isDark ? "border-gray-600 text-gray-400 hover:border-gray-400" : "border-gray-300 text-gray-500 hover:border-gray-400")}`}>
-                  {REGION_EMOJIS[r]} {r}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setIsDark(v => !v)}
-              className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-yellow-400 hover:bg-gray-700" : "border-gray-300 text-gray-600 hover:bg-gray-100"}`}>
-              {isDark ? "☀️" : "🌙"}
+            ))}
+          </div>
+          <button onClick={() => setIsDark(v => !v)}
+            className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-yellow-400 hover:bg-gray-700" : "border-gray-300 text-gray-600 hover:bg-gray-100"}`}>
+            {isDark ? "☀️" : "🌙"}
+          </button>
+          <button onClick={onImportNew}
+            className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-gray-300 hover:bg-gray-700" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
+            📤 Import
+          </button>
+          <button onClick={() => setConfirm({ type: "reset" })}
+            className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-red-800 text-red-400 hover:bg-red-900/30" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
+            🗑 Reset
+          </button>
+          <div className="flex items-center gap-1">
+            <input ref={driverFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleDriverFile} />
+            <button onClick={() => driverFileRef.current?.click()} disabled={importingDrivers}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
+              {importingDrivers ? "Đang import..." : "Cập nhật ds tx"}
             </button>
-            <button onClick={onImportNew}
-              className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-gray-300 hover:bg-gray-700" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
-              📤 Import
-            </button>
-            <button onClick={() => setConfirm({ type: "reset" })}
-              className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-red-800 text-red-400 hover:bg-red-900/30" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
-              🗑 Reset
-            </button>
-            <div className="flex items-center gap-1">
-              <input ref={driverFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleDriverFile} />
-              <button onClick={() => driverFileRef.current?.click()} disabled={importingDrivers}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
-                {importingDrivers ? "Đang import..." : "Cập nhật ds tx"}
-              </button>
-              {driverInfo && <span className="text-xs text-cyan-50">({driverInfo.total} tx)</span>}
-            </div>
-            {headerActions && (
-              <div className="flex items-center gap-3 pl-3 ml-2 border-l border-white/20">
-                {headerActions}
-              </div>
-            )}
+            {driverInfo && <span className="text-xs text-cyan-50">({driverInfo.total} tx)</span>}
           </div>
         </div>
       </div>
