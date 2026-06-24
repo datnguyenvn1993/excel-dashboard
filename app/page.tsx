@@ -48,7 +48,7 @@ export default function Home() {
                   d="M9 19v-6a2 2 0 00-2-2V5a2 2 0 00-2 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <span className="font-semibold text-white">Excel Dashboard</span>
+            <span className="font-semibold text-white">Vận hành Platform Dashboard</span>
           </div>
           <div className="flex items-center gap-3">
             {user.role === "admin" && (
