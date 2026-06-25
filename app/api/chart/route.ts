@@ -89,14 +89,13 @@ export async function GET(req: NextRequest) {
              SUM(CASE WHEN LOWER(status) LIKE 'complete%' THEN total_pay ELSE 0 END) as g
            FROM orders
            WHERE create_date >= $1::date - 17
-           AND SPLIT_PART(TRIM(CAST(depot AS TEXT)), '.', 1) = '1032'
            ${regionFilterSql}
            GROUP BY create_date
            UNION ALL
            SELECT create_date,
              SUM(complete_count), SUM(processing_count), SUM(cancel_count), SUM(gmv)
            FROM orders_summary
-           WHERE create_date >= $1::date - 17 AND depot = '1032'
+           WHERE create_date >= $1::date - 17
            ${regionFilterSummarySql}
            GROUP BY create_date
          ) combined
