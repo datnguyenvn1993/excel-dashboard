@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
     }
 
     const hourFilterRawSql = effectiveHour !== null ? `AND o.create_hour <= ${effectiveHour}` : "";
-    const hourFilterSummarySql = effectiveHour !== null ? `AND create_hour <= ${effectiveHour}` : "";
+    const effHourForSummary = effectiveHour !== null ? effectiveHour : 23;
 
     // Build raw queries
     const buildCurrRaw = () => `
@@ -99,21 +99,19 @@ export async function GET(req: NextRequest) {
     // Build summary queries
     const buildCurrSummary = () => `
       SELECT doi,
-        COALESCE(SUM(gmv),0)::float AS gmv,
-        COALESCE(SUM(driver_active),0)::int AS driver_active,
-        COALESCE(SUM(complete_count),0)::int AS trip_complete
-      FROM orders_summary
-      WHERE create_date = $1::date AND depot = '1032' ${hourFilterSummarySql}
-      GROUP BY doi
+        gmv::float AS gmv,
+        driver_active::int AS driver_active,
+        trip_complete::int AS trip_complete
+      FROM team_hourly_summary
+      WHERE create_date = $1::date AND create_hour = ${effHourForSummary}
     `;
     const buildPrevSummary = () => `
       SELECT doi,
-        COALESCE(SUM(gmv),0)::float AS gmv,
-        COALESCE(SUM(driver_active),0)::int AS driver_active,
-        COALESCE(SUM(complete_count),0)::int AS trip_complete
-      FROM orders_summary
-      WHERE create_date = $1::date AND depot = '1032' ${hourFilterSummarySql}
-      GROUP BY doi
+        gmv::float AS gmv,
+        driver_active::int AS driver_active,
+        trip_complete::int AS trip_complete
+      FROM team_hourly_summary
+      WHERE create_date = $1::date AND create_hour = ${effHourForSummary}
     `;
 
     // Execute CTE query combining curr and prev
