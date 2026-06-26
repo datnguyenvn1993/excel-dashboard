@@ -22,6 +22,12 @@ interface TeamRow {
   driver_active: number; driver_active_prev: number | null;
   trip_complete: number; trip_complete_prev: number | null;
 }
+interface DepotRow {
+  depot_group: string;
+  gmv: number; gmv_prev: number | null;
+  driver_active: number; driver_active_prev: number | null;
+  trip_complete: number; trip_complete_prev: number | null;
+}
 interface ChartData {
   todayDate: string | null; d7Date: string | null;
   hourly: { hour: string; today: number; d7: number }[];
@@ -266,6 +272,10 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
   const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
   const [teamSortCol, setTeamSortCol] = useState<string>("gmv");
   const [teamSortDir, setTeamSortDir] = useState<"asc" | "desc">("desc");
+
+  const [depotReport, setDepotReport] = useState<DepotRow[]>([]);
+  const [depotSortCol, setDepotSortCol] = useState<string>("gmv");
+  const [depotSortDir, setDepotSortDir] = useState<"asc" | "desc">("desc");
   const [importingDrivers, setImportingDrivers] = useState(false);
   const [txHourly, setTxHourly] = useState<{ hour: string; today: number; d7: number }[]>([]);
   const [txByTeam, setTxByTeam] = useState<Record<string, { hour: string; count: number }[]>>({});
@@ -344,6 +354,17 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
     } catch { }
   }, [selectedDate]);
 
+  const fetchDepotReport = useCallback(async () => {
+    const p = new URLSearchParams();
+    if (selectedDate) p.set("date", selectedDate);
+    if (selectedHourRef.current !== null) p.set("hour", String(selectedHourRef.current));
+    try {
+      const r = await fetch("/api/depot-report?" + p.toString());
+      const d = await r.json();
+      if (!d.error) setDepotReport(d.depots || []);
+    } catch { }
+  }, [selectedDate]);
+
   const fetchDriverInfo = useCallback(async () => {
     try {
       const r = await fetch("/api/drivers");
@@ -373,6 +394,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
   }, [refreshKey, fetchAll, fetchTable]); // fetchTable is now stable — won't re-fire on hour change
   useEffect(() => { fetchTable(tablePage); }, [tablePage, fetchTable]);
   useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
+  useEffect(() => { fetchDepotReport(); }, [fetchDepotReport]);
   useEffect(() => { fetchTxHourly(); }, [fetchTxHourly]);
   useEffect(() => { fetchDriverInfo(); }, [fetchDriverInfo]);
 
@@ -393,6 +415,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
     fetchAll(selectedDate, selectedRegions, h);
     fetchTable(0); // re-fetch table with new hour (ref already updated)
     fetchTeamReport(); // re-fetch team report with new hour
+    fetchDepotReport(); // re-fetch depot report with new hour
     setTablePage(0);
   }
   function toggleHiddenLine(key: string) {
@@ -448,7 +471,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
       });
       const json = await res.json();
       if (json.error) { alert("Lỗi: " + json.error); return; }
-      await fetchDriverInfo(); await fetchTeamReport();
+      await fetchDriverInfo(); await fetchTeamReport(); await fetchDepotReport();
     } catch (err) {
       alert("Lỗi đọc file: " + String(err));
     } finally { setImportingDrivers(false); e.target.value = ""; }
@@ -495,6 +518,26 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
       return teamSortDir === "asc" ? v1 - v2 : v2 - v1;
     });
   }, [teamReport, teamSortCol, teamSortDir]);
+
+  const sortedDepotReport = useMemo(() => {
+    return [...depotReport].map(t => {
+      const tpd = t.driver_active > 0 ? t.trip_complete / t.driver_active : 0;
+      const tpdPrev = t.driver_active_prev && t.driver_active_prev > 0 ? (t.trip_complete_prev ?? 0) / t.driver_active_prev : null;
+      return {
+        ...t, tpd,
+        wGmv: wowPct(t.gmv, t.gmv_prev),
+        wDa: wowPct(t.driver_active, t.driver_active_prev),
+        wTc: wowPct(t.trip_complete, t.trip_complete_prev),
+        wTpd: wowPct(tpd, tpdPrev)
+      };
+    }).sort((a, b) => {
+      let v1: any = a[depotSortCol as keyof typeof a];
+      let v2: any = b[depotSortCol as keyof typeof b];
+      if (typeof v1 === "string") return depotSortDir === "asc" ? v1.localeCompare(v2) : v2.localeCompare(v1);
+      v1 = v1 ?? -Infinity; v2 = v2 ?? -Infinity;
+      return depotSortDir === "asc" ? v1 - v2 : v2 - v1;
+    });
+  }, [depotReport, depotSortCol, depotSortDir]);
 
   // Driver Active chart data
   const TEAM_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16", "#06b6d4", "#d946ef", "#0ea5e9", "#a855f7", "#22c55e", "#e11d48", "#facc15", "#2dd4bf", "#fb923c", "#818cf8"];
@@ -862,6 +905,94 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                       return (
                         <tr className={"border-t-2 border-dashed " + (isDark ? "border-gray-500 bg-gray-800" : "border-gray-300 bg-gray-50")}>
                           <td className={"px-3 py-2 font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Platform HCM</td>
+                          <td className="px-3 py-2 text-right font-bold">{(gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{driver_active}</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{trip_complete}</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                        </tr>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Depot Report ──────────────────────────────────────────────── */}
+          <div className="mt-6">
+            <div className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
+              <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
+                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo Depot</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
+                  <thead>
+                    <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
+                      {(() => {
+                        const th = (key: string, label: string, align: string) => {
+                          const dir = depotSortCol === key ? depotSortDir : null;
+                          return (
+                            <th key={key} className={`px-3 py-2 text-${align} cursor-pointer select-none hover:${isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}
+                              onClick={() => {
+                                if (depotSortCol === key) setDepotSortDir(d => d === "asc" ? "desc" : "asc");
+                                else { setDepotSortCol(key); setDepotSortDir("desc"); }
+                              }}>
+                              {label} {dir === "asc" ? "↑" : dir === "desc" ? "↓" : <span className="opacity-0">↕</span>}
+                            </th>
+                          );
+                        };
+                        return (
+                          <>
+                            {th("depot_group", "Depot", "left")}
+                            {th("gmv", "GMV", "right")} {th("wGmv", "WoW%", "right")}
+                            {th("driver_active", "Active Driver", "right")} {th("wDa", "WoW%", "right")}
+                            {th("trip_complete", "Trip", "right")} {th("wTc", "WoW%", "right")}
+                            {th("tpd", "TpD", "right")} {th("wTpd", "WoW%", "right")}
+                          </>
+                        );
+                      })()}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedDepotReport.map((t: any) => {
+                      const { wGmv, wDa, wTc, wTpd, tpd } = t;
+                      const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+                      const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
+                      return (
+                        <tr key={t.depot_group} className={isDark ? "border-t border-gray-800 hover:bg-gray-800" : "border-t border-gray-100 hover:bg-gray-50"}>
+                          <td className="px-3 py-2 font-medium">{t.depot_group}</td>
+                          <td className="px-3 py-2 text-right">{(t.gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-right">{t.driver_active}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-right">{t.trip_complete}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-right">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                        </tr>
+                      );
+                    })}
+                    {(() => {
+                      if (depotReport.length === 0) return null;
+                      let gmv = 0, gmv_prev = 0, driver_active = 0, driver_active_prev = 0, trip_complete = 0, trip_complete_prev = 0;
+                      for (const t of depotReport) {
+                        gmv += t.gmv || 0; gmv_prev += t.gmv_prev || 0;
+                        driver_active += t.driver_active || 0; driver_active_prev += t.driver_active_prev || 0;
+                        trip_complete += t.trip_complete || 0; trip_complete_prev += t.trip_complete_prev || 0;
+                      }
+                      const tpd = driver_active > 0 ? trip_complete / driver_active : 0;
+                      const tpdPrev = driver_active_prev > 0 ? trip_complete_prev / driver_active_prev : null;
+                      const wGmv = wowPct(gmv, gmv_prev); const wDa = wowPct(driver_active, driver_active_prev);
+                      const wTc = wowPct(trip_complete, trip_complete_prev); const wTpd = wowPct(tpd, tpdPrev);
+                      const wFmt = (v: number | null) => v === null ? "-" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+                      const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
+                      return (
+                        <tr className={"border-t-2 border-dashed " + (isDark ? "border-gray-500 bg-gray-800" : "border-gray-300 bg-gray-50")}>
+                          <td className={"px-3 py-2 font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Tổng Quốc</td>
                           <td className="px-3 py-2 text-right font-bold">{(gmv / 1e6).toFixed(1)}M</td>
                           <td className={"px-3 py-2 text-right font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
                           <td className="px-3 py-2 text-right font-bold">{driver_active}</td>

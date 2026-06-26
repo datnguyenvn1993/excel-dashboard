@@ -79,6 +79,19 @@ export async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_team_hourly_date ON team_hourly_summary(create_date)`);
     await client.query(`
+      CREATE TABLE IF NOT EXISTS depot_hourly_summary (
+        id SERIAL PRIMARY KEY,
+        create_date DATE NOT NULL,
+        create_hour SMALLINT NOT NULL,
+        depot_group TEXT NOT NULL DEFAULT '',
+        gmv NUMERIC(15,2) DEFAULT 0,
+        driver_active INT DEFAULT 0,
+        trip_complete INT DEFAULT 0,
+        UNIQUE(create_date, create_hour, depot_group)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_depot_hourly_date ON depot_hourly_summary(create_date)`);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS compression_log (
         create_date    DATE PRIMARY KEY,
         status         TEXT NOT NULL DEFAULT 'raw',

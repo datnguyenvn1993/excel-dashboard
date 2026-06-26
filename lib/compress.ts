@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { buildRegionSql } from "./regions";
+import { buildDepotGroupSql } from "./depots";
 
 /**
  * Check if a date has been compressed (has summary rows).
@@ -35,6 +36,7 @@ export async function getCompressedDates(client: PoolClient): Promise<Set<string
  */
 export async function compressDate(client: PoolClient, date: string): Promise<{ rawDeleted: number; summaryInserted: number }> {
   const regionCaseSql = buildRegionSql("o.pickup_city");
+  const depotGroupSql = buildDepotGroupSql("o.depot");
 
   // Count raw rows first
   const countRes = await client.query(
@@ -51,6 +53,8 @@ export async function compressDate(client: PoolClient, date: string): Promise<{ 
 
   // Precalculate cumulative data for Team Report to avoid Driver Active duplication
   await client.query("DELETE FROM team_hourly_summary WHERE create_date = $1::date", [date]);
+  await client.query("DELETE FROM depot_hourly_summary WHERE create_date = $1::date", [date]);
+
   for (let h = 0; h <= 23; h++) {
     await client.query(`
             INSERT INTO team_hourly_summary (create_date, create_hour, doi, gmv, driver_active, trip_complete)
@@ -67,6 +71,23 @@ export async function compressDate(client: PoolClient, date: string): Promise<{ 
               AND SPLIT_PART(TRIM(CAST(o.depot AS TEXT)), '.', 1) = '1032'
               AND o.create_hour <= $2::int
             GROUP BY COALESCE(d.doi, '')
+            HAVING COUNT(o.id) > 0
+        `, [date, h]);
+
+    // Precalculate cumulative data for Depot Report
+    await client.query(`
+            INSERT INTO depot_hourly_summary (create_date, create_hour, depot_group, gmv, driver_active, trip_complete)
+            SELECT
+              $1::date,
+              $2::smallint,
+              COALESCE(${depotGroupSql}, 'Khác'),
+              COALESCE(SUM(CASE WHEN LOWER(o.status) LIKE 'complete%' THEN o.total_pay ELSE 0 END), 0),
+              COUNT(DISTINCT NULLIF(TRIM(o.sap_profile_id),'')) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int,
+              COUNT(o.id) FILTER (WHERE LOWER(o.status) LIKE 'complete%')::int
+            FROM orders o
+            WHERE o.create_date = $1::date 
+              AND o.create_hour <= $2::int
+            GROUP BY COALESCE(${depotGroupSql}, 'Khác')
             HAVING COUNT(o.id) > 0
         `, [date, h]);
   }
