@@ -837,18 +837,18 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
           <div className="mt-6">
             <div ref={teamReportRef} className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
-                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội</h3>
+                <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo đội (HCM)</h3>
                 <ScreenshotBtn targetRef={teamReportRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <div className="overflow-x-auto">
-                <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
+                <table className={"w-full table-fixed text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
                   <thead>
                     <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
                       {(() => {
-                        const th = (key: string, label: string, align: string) => {
+                        const th = (key: string, label: string, align: string, widthCls: string = "") => {
                           const dir = teamSortCol === key ? teamSortDir : null;
                           return (
-                            <th key={key} className={`px-3 py-2 text-${align} cursor-pointer select-none hover:${isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}
+                            <th key={key} className={`px-3 py-2 text-${align} ${widthCls} cursor-pointer select-none hover:${isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}
                               onClick={() => {
                                 if (teamSortCol === key) setTeamSortDir(d => d === "asc" ? "desc" : "asc");
                                 else { setTeamSortCol(key); setTeamSortDir("desc"); }
@@ -859,11 +859,11 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                         };
                         return (
                           <>
-                            {th("doi", "Đội", "left")}
-                            {th("gmv", "GMV", "right")} {th("wGmv", "WoW%", "right")}
-                            {th("driver_active", "Active Driver", "right")} {th("wDa", "WoW%", "right")}
-                            {th("trip_complete", "Trip", "right")} {th("wTc", "WoW%", "right")}
-                            {th("tpd", "TpD", "right")} {th("wTpd", "WoW%", "right")}
+                            {th("doi", "Đội", "center", "w-28")}
+                            {th("gmv", "GMV", "center")} {th("wGmv", "WoW%", "center")}
+                            {th("driver_active", "Active Driver", "center")} {th("wDa", "WoW%", "center")}
+                            {th("trip_complete", "Trip", "center")} {th("wTc", "WoW%", "center")}
+                            {th("tpd", "TpD", "center")} {th("wTpd", "WoW%", "center")}
                           </>
                         );
                       })()}
@@ -876,15 +876,15 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                       const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
                       return (
                         <tr key={t.doi} className={isDark ? "border-t border-gray-800 hover:bg-gray-800" : "border-t border-gray-100 hover:bg-gray-50"}>
-                          <td className="px-3 py-2 font-medium">{t.doi}</td>
-                          <td className="px-3 py-2 text-right">{(t.gmv / 1e6).toFixed(1)}M</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
-                          <td className="px-3 py-2 text-right">{t.driver_active}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
-                          <td className="px-3 py-2 text-right">{t.trip_complete}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
-                          <td className="px-3 py-2 text-right">{tpd.toFixed(2)}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                          <td className="px-3 py-2 text-center font-medium truncate">{t.doi}</td>
+                          <td className="px-3 py-2 text-center">{(t.gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-center">{t.driver_active}</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-center">{t.trip_complete}</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-center">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
                         </tr>
                       );
                     })}
@@ -904,15 +904,15 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                       const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
                       return (
                         <tr className={"border-t-2 border-dashed " + (isDark ? "border-gray-500 bg-gray-800" : "border-gray-300 bg-gray-50")}>
-                          <td className={"px-3 py-2 font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Platform HCM</td>
-                          <td className="px-3 py-2 text-right font-bold">{(gmv / 1e6).toFixed(1)}M</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{driver_active}</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wDa)}>{wFmt(wDa)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{trip_complete}</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTc)}>{wFmt(wTc)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{tpd.toFixed(2)}</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Platform HCM</td>
+                          <td className="px-3 py-2 text-center font-bold">{(gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-center font-bold">{driver_active}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-center font-bold">{trip_complete}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-center font-bold">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wTpd)}>{wFmt(wTpd)}</td>
                         </tr>
                       );
                     })()}
@@ -929,14 +929,14 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo Depot</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className={"w-full text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
+                <table className={"w-full table-fixed text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
                   <thead>
                     <tr className={isDark ? "bg-gray-800 text-gray-400" : "bg-gray-50 text-gray-500"}>
                       {(() => {
-                        const th = (key: string, label: string, align: string) => {
+                        const th = (key: string, label: string, align: string, widthCls: string = "") => {
                           const dir = depotSortCol === key ? depotSortDir : null;
                           return (
-                            <th key={key} className={`px-3 py-2 text-${align} cursor-pointer select-none hover:${isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}
+                            <th key={key} className={`px-3 py-2 text-${align} ${widthCls} cursor-pointer select-none hover:${isDark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}
                               onClick={() => {
                                 if (depotSortCol === key) setDepotSortDir(d => d === "asc" ? "desc" : "asc");
                                 else { setDepotSortCol(key); setDepotSortDir("desc"); }
@@ -947,11 +947,11 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                         };
                         return (
                           <>
-                            {th("depot_group", "Depot", "left")}
-                            {th("gmv", "GMV", "right")} {th("wGmv", "WoW%", "right")}
-                            {th("driver_active", "Active Driver", "right")} {th("wDa", "WoW%", "right")}
-                            {th("trip_complete", "Trip", "right")} {th("wTc", "WoW%", "right")}
-                            {th("tpd", "TpD", "right")} {th("wTpd", "WoW%", "right")}
+                            {th("depot_group", "Depot", "center", "w-28")}
+                            {th("gmv", "GMV", "center")} {th("wGmv", "WoW%", "center")}
+                            {th("driver_active", "Active Driver", "center")} {th("wDa", "WoW%", "center")}
+                            {th("trip_complete", "Trip", "center")} {th("wTc", "WoW%", "center")}
+                            {th("tpd", "TpD", "center")} {th("wTpd", "WoW%", "center")}
                           </>
                         );
                       })()}
@@ -964,15 +964,15 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                       const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
                       return (
                         <tr key={t.depot_group} className={isDark ? "border-t border-gray-800 hover:bg-gray-800" : "border-t border-gray-100 hover:bg-gray-50"}>
-                          <td className="px-3 py-2 font-medium">{t.depot_group}</td>
-                          <td className="px-3 py-2 text-right">{(t.gmv / 1e6).toFixed(1)}M</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
-                          <td className="px-3 py-2 text-right">{t.driver_active}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
-                          <td className="px-3 py-2 text-right">{t.trip_complete}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
-                          <td className="px-3 py-2 text-right">{tpd.toFixed(2)}</td>
-                          <td className={"px-3 py-2 text-right font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                          <td className="px-3 py-2 text-center font-medium truncate">{t.depot_group}</td>
+                          <td className="px-3 py-2 text-center">{(t.gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-center">{t.driver_active}</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-center">{t.trip_complete}</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-center">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-center font-medium " + wCls(wTpd)}>{wFmt(wTpd)}</td>
                         </tr>
                       );
                     })}
@@ -992,15 +992,15 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
                       const wCls = (v: number | null) => v === null ? "" : v >= 0 ? "text-green-500" : "text-red-500";
                       return (
                         <tr className={"border-t-2 border-dashed " + (isDark ? "border-gray-500 bg-gray-800" : "border-gray-300 bg-gray-50")}>
-                          <td className={"px-3 py-2 font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Tổng Quốc</td>
-                          <td className="px-3 py-2 text-right font-bold">{(gmv / 1e6).toFixed(1)}M</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{driver_active}</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wDa)}>{wFmt(wDa)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{trip_complete}</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTc)}>{wFmt(wTc)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{tpd.toFixed(2)}</td>
-                          <td className={"px-3 py-2 text-right font-bold " + wCls(wTpd)}>{wFmt(wTpd)}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + (isDark ? "text-blue-400" : "text-blue-600")}>Toàn Quốc</td>
+                          <td className="px-3 py-2 text-center font-bold">{(gmv / 1e6).toFixed(1)}M</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wGmv)}>{wFmt(wGmv)}</td>
+                          <td className="px-3 py-2 text-center font-bold">{driver_active}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wDa)}>{wFmt(wDa)}</td>
+                          <td className="px-3 py-2 text-center font-bold">{trip_complete}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wTc)}>{wFmt(wTc)}</td>
+                          <td className="px-3 py-2 text-center font-bold">{tpd.toFixed(2)}</td>
+                          <td className={"px-3 py-2 text-center font-bold " + wCls(wTpd)}>{wFmt(wTpd)}</td>
                         </tr>
                       );
                     })()}
