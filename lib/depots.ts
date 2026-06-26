@@ -71,3 +71,22 @@ export function buildDepotGroupSql(col: string): string {
     });
     return `CASE \n  ${cases.join("\n  ")}\n  ELSE 'Khác'\nEND`;
 }
+
+/**
+ * Client-safe equivalent of SPLIT_PART(TRIM(depot), '.', 1).
+ */
+export function depotCode(depot: string): string {
+    return String(depot ?? "").trim().split(".")[0];
+}
+
+/**
+ * Client-safe equivalent of buildDepotGroupSql() — first matching group (in DEPOTS order) wins, else "Khác".
+ * Must stay in sync with buildDepotGroupSql so client aggregation == server compressDate.
+ */
+export function depotGroupForDepot(depot: string): string {
+    const code = depotCode(depot);
+    for (const [group, depots] of Object.entries(DEPOTS)) {
+        if (depots.includes(code)) return group;
+    }
+    return "Khác";
+}

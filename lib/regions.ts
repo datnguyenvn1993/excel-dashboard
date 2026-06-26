@@ -80,3 +80,19 @@ export function parseRegions(param: string | null): string[] {
   const valid = new Set<string>(REGION_ORDER);
   return param.split(",").map(r => r.trim()).filter(r => valid.has(r));
 }
+
+/**
+ * Client-safe equivalent of buildRegionSql():
+ * LOWER(TRIM(city)) LIKE '%cityName%' — first matching region (in REGIONS order) wins, else "".
+ * Must stay in sync with buildRegionSql so client aggregation == server compressDate.
+ */
+export function regionForCity(city: string): string {
+  const c = String(city ?? "").toLowerCase().trim();
+  if (!c) return "";
+  for (const [region, cities] of Object.entries(REGIONS)) {
+    for (const name of cities) {
+      if (c.includes(name.toLowerCase().trim())) return region;
+    }
+  }
+  return "";
+}

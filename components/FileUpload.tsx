@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-
-// Tăng batch size để upload nhanh hơn với file lớn
-const BATCH_SIZE = 5000;
-const CONCURRENCY = 5;
+import { aggregate } from "@/lib/aggregate";
 
 // Column aliases (case-insensitive match)
 const COL_ALIASES: Record<string, string[]> = {
@@ -124,50 +121,44 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
           };
         });
 
-        // Collect unique dates from this file (for targeted DELETE)
-        const datesInFile = [...new Set(processed.map(r => r.create_date).filter(Boolean))];
-
-        // Split into batches
-        const totalRows = processed.length;
-        const batches: ImportRow[][] = [];
-        for (let i = 0; i < totalRows; i += BATCH_SIZE) {
-          batches.push(processed.slice(i, i + BATCH_SIZE));
+        // ---- Aggregate on the client so we upload only summary rows (vài trăm dòng),
+        //      thay vì 180k dòng raw -> giảm mạnh Vercel Fast Origin Transfer. ----
+        setProgress({ sent: 0, total: 0, phase: "Đang tải bảng tài xế..." });
+        let driverMap: Record<string, string> = {};
+        try {
+          const dmRes = await fetch("/api/drivers/map");
+          if (dmRes.ok) driverMap = (await dmRes.json()).map ?? {};
+        } catch {
+          // Không lấy được map -> doi để trống (giống tài xế chưa khai báo)
         }
 
-        let sentRows = 0;
+        setProgress({ sent: 0, total: 0, phase: "Đang tổng hợp dữ liệu..." });
+        const agg = aggregate(processed, driverMap);
 
-        async function runBatch(batch: ImportRow[], isFirst: boolean, dates?: string[]) {
-          const res = await fetch("/api/import", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              rows: batch,
-              isFirst,
-              ...(isFirst && dates ? { datesInFile: dates } : {}),
-            }),
-          });
-          if (!res.ok) {
-            const text = await res.text();
-            throw new Error(text || `HTTP ${res.status}`);
-          }
-          sentRows += batch.length;
-          setProgress({ sent: sentRows, total: totalRows, phase: "Đang upload lên server..." });
+        if (agg.dates.length === 0) {
+          setError("Không có dòng hợp lệ sau khi lọc (kiểm tra cột Status / Depot).");
+          return;
         }
 
-        setProgress({ sent: 0, total: totalRows, phase: "Đang upload lên server..." });
-
-        // Send first batch alone (it DELETEs by date + inserts) to avoid race condition
-        await runBatch(batches[0], true, datesInFile);
-
-        // Send remaining batches with concurrency
-        let idx = 1;
-        while (idx < batches.length && !abortRef.current) {
-          const chunk = batches.slice(idx, idx + CONCURRENCY);
-          await Promise.all(chunk.map((batch) => runBatch(batch, false)));
-          idx += CONCURRENCY;
+        setProgress({ sent: 0, total: agg.rawCount, phase: "Đang upload lên server..." });
+        const res = await fetch("/api/import-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ordersSummary: agg.ordersSummary,
+            teamHourly: agg.teamHourly,
+            depotHourly: agg.depotHourly,
+            dates: agg.dates,
+            rawCount: agg.rawCount,
+          }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
         }
 
         if (!abortRef.current) {
+          const totalRows = agg.rawCount;
           setProgress({ sent: totalRows, total: totalRows, phase: "Hoàn thành!" });
           await new Promise((r) => setTimeout(r, 700));
           onUploadSuccess();
