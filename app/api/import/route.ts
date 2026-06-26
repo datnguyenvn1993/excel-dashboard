@@ -17,7 +17,7 @@ interface ImportRow {
 // 500 rows x 9 cols = 4500 params, dưới giới hạn 65535 của Postgres
 const CHUNK = 500;
 
-const VALID_STATUSES = ["COMPLETED", "CANCELLED"];
+const VALID_STATUSES = ["COMPLETED", "CANCELLED", "IN PROCESS"];
 
 const VALID_DEPOTS = [
   "PFBLU", "1017", "1109", "PFBDI", "1107", "1019", "PFBTN", "2000",
@@ -40,10 +40,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No rows" }, { status: 400 });
     }
 
-    // Lọc bỏ các dòng không hợp lệ trước khi insert
-    const filteredRows = rows.filter(
-      (r) => VALID_STATUSES.includes(String(r.status)) && VALID_DEPOTS.includes(String(r.depot))
-    );
+    // Lọc bỏ các dòng không hợp lệ trước khi insert và chuẩn hóa trạng thái về in hoa chữ cái đầu (mặc định COMPLETED hoặc CANCELLED)
+    const filteredRows = rows
+      .filter(
+        (r) => VALID_STATUSES.includes(String(r.status).toUpperCase()) && VALID_DEPOTS.includes(String(r.depot))
+      )
+      .map((r) => {
+        let st = String(r.status).toUpperCase();
+        if (st === "IN PROCESS") {
+          st = "COMPLETED";
+        }
+        return { ...r, status: st };
+      });
 
     if (filteredRows.length === 0) {
       return NextResponse.json({ error: "No valid rows after filtering" }, { status: 400 });
