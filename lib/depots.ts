@@ -1,7 +1,7 @@
 export const DEPOTS: Record<string, string[]> = {
     "Hồ Chí Minh": ["1032"],
     "Hà Nội": ["1031"],
-    "Các tỉnh miền Bắc": [
+    "Miền Bắc": [
         "1017",
         "PFHDU",
         "PFHNA",
@@ -20,7 +20,7 @@ export const DEPOTS: Record<string, string[]> = {
         "1018",
         "PLFYBI"
     ],
-    "Các tỉnh Miền Nam": [
+    "Miền Nam": [
         "PFBLU",
         "1109",
         "PFBDI",
@@ -56,8 +56,8 @@ export const DEPOTS: Record<string, string[]> = {
 export const DEPOT_ORDER = [
     "Hồ Chí Minh",
     "Hà Nội",
-    "Các tỉnh miền Bắc",
-    "Các tỉnh Miền Nam",
+    "Miền Bắc",
+    "Miền Nam",
 ] as const;
 
 export type DepotGroup = typeof DEPOT_ORDER[number];
