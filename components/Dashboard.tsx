@@ -283,6 +283,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
   const tripChartRef = useRef<HTMLDivElement>(null);
   const dailyRef = useRef<HTMLDivElement>(null);
   const teamReportRef = useRef<HTMLDivElement>(null);
+  const depotReportRef = useRef<HTMLDivElement>(null);
   const driverChartRef = useRef<HTMLDivElement>(null);
   const driverFileRef = useRef<HTMLInputElement>(null);
 
@@ -583,14 +584,12 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
             className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-yellow-400 hover:bg-gray-700" : "border-gray-300 text-gray-600 hover:bg-gray-100"}`}>
             {isDark ? "☀️" : "🌙"}
           </button>
-          <button onClick={onImportNew}
-            className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-gray-600 text-gray-300 hover:bg-gray-700" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
-            📤 Import
-          </button>
-          <button onClick={() => setConfirm({ type: "reset" })}
-            className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-red-800 text-red-400 hover:bg-red-900/30" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
-            🗑 Reset
-          </button>
+          {(currentUser?.role === "admin" || currentUser?.role === "manager") && (
+            <button onClick={() => setConfirm({ type: "reset" })}
+              className={`px-3 py-1.5 text-sm rounded-lg border ${isDark ? "border-red-800 text-red-400 hover:bg-red-900/30" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
+              🗑 Reset
+            </button>
+          )}
           <div className="flex items-center gap-1">
             <input ref={driverFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleDriverFile} />
             <button onClick={() => driverFileRef.current?.click()} disabled={importingDrivers}
@@ -881,9 +880,10 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
 
           {/* ── Depot Report ──────────────────────────────────────────────── */}
           <div className="mt-6">
-            <div className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
+            <div ref={depotReportRef} className={"rounded-xl overflow-hidden border " + (isDark ? "border-gray-700" : "border-gray-200")}>
               <div className={"flex items-center justify-between px-4 py-3 " + (isDark ? "bg-gray-800" : "bg-gray-50")}>
                 <h3 className={"text-sm font-semibold " + (isDark ? "text-white" : "text-gray-800")}>Báo cáo theo Depot</h3>
+                <ScreenshotBtn targetRef={depotReportRef} isDark={isDark} watermarkText={watermarkText} />
               </div>
               <div className="overflow-x-auto">
                 <table className={"w-full table-fixed text-xs " + (isDark ? "bg-gray-900 text-gray-200" : "bg-white text-gray-700")}>
