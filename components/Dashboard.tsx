@@ -35,13 +35,7 @@ interface ChartData {
     date: string; isWeekend?: boolean; complete: number; processing: number; cancel: number; gmv: number;
   }[];
 }
-interface TableRow {
-  id: number; order_id: string; status: string; depot: string;
-  total_pay: number; pickup_city: string; create_date: string;
-  create_hour: number; sap_profile_id: string; distance: string;
-}
-interface TableData { rows: TableRow[]; total: number; page: number; limit: number; }
-type ConfirmState = { type: "reset" } | { type: "deleteRows"; count: number } | null;
+type ConfirmState = { type: "reset" } | null;
 
 const ALL_REGIONS = ["Hồ Chí Minh", "Hà Nội", "Miền Nam", "Miền Bắc"] as const;
 const REGION_ORDER = ["Hồ Chí Minh", "Hà Nội", "Miền Nam", "Miền Bắc"];
@@ -95,13 +89,6 @@ function wowPct(curr: number, prev: number | null): number | null {
 function deltaPct(curr: number, prev: number | undefined): number | undefined {
   if (!prev || prev === 0) return undefined;
   return (curr - prev) / prev * 100;
-}
-function getStatusGroup(s: string) {
-  const l = s.toLowerCase();
-  if (l.startsWith("complete")) return "complete";
-  if (l.startsWith("cancel")) return "cancel";
-  if (l.startsWith("process") || l === "in progress") return "processing";
-  return "other";
 }
 async function captureToClipboard(el: HTMLElement, isDark: boolean, o?: { watermarkText?: string }) {
   const w = window as unknown as Record<string, unknown>;
@@ -258,17 +245,13 @@ function KPIRow({ kpi, isDark }: { kpi: KPIResult; isDark: boolean }) {
 export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, headerActions }: DashboardProps) {
   const [isDark, setIsDark] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [tablePage, setTablePage] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
 
   const [kpiData, setKpiData] = useState<KPIData | null>(null);
   const [chartData, setChartData] = useState<ChartData | null>(null);
-  const [tableData, setTableData] = useState<TableData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tableLoading, setTableLoading] = useState(false);
   const [teamReport, setTeamReport] = useState<TeamRow[]>([]);
   const [teamSortCol, setTeamSortCol] = useState<string>("gmv");
   const [teamSortDir, setTeamSortDir] = useState<"asc" | "desc">("desc");
@@ -291,7 +274,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
   const [now, setNow] = useState(() => Date.now());
   const watermarkText = currentUser ? (currentUser.display_name || currentUser.username) : undefined;
 
-  // Ref so fetchTable stays stable (not recreated when hour changes)
+  // Ref so hour-dependent fetches read the latest hour synchronously
   const selectedHourRef = useRef<number | null>(null);
 
   const nationalRef = useRef<HTMLDivElement>(null);
@@ -310,7 +293,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
 
   const fetchAll = useCallback(async (date: string, regions: string[], hour: number | null) => {
     setLoading(true);
-    setSelectedIds(new Set());
     try {
       const dateStr = date ? `date=${date}` : "";
       const regionsStr = regions.length > 0 ? `regions=${encodeURIComponent(regions.join(","))}` : "";
@@ -330,18 +312,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
       }
     } finally { setLoading(false); }
   }, []);
-
-  // fetchTable uses ref so it stays stable and doesn't trigger the reset useEffect
-  const fetchTable = useCallback(async (page: number) => {
-    setTableLoading(true);
-    setSelectedIds(new Set());
-    try {
-      const h = selectedHourRef.current;
-      const hourStr = h !== null ? `&hour=${h}` : "";
-      const t = await fetch(`/api/rows?page=${page}&limit=100${hourStr}`).then(r => r.json());
-      setTableData(t);
-    } finally { setTableLoading(false); }
-  }, []); // stable — no selectedHour dep
 
   const fetchTeamReport = useCallback(async () => {
     const p = new URLSearchParams();
@@ -390,9 +360,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
   useEffect(() => {
     selectedHourRef.current = null;
     setSelectedDate(""); setSelectedRegions([]); setSelectedHour(null);
-    fetchAll("", [], null); fetchTable(0); setTablePage(0);
-  }, [refreshKey, fetchAll, fetchTable]); // fetchTable is now stable — won't re-fire on hour change
-  useEffect(() => { fetchTable(tablePage); }, [tablePage, fetchTable]);
+    fetchAll("", [], null);
+  }, [refreshKey, fetchAll]);
   useEffect(() => { fetchTeamReport(); }, [fetchTeamReport]);
   useEffect(() => { fetchDepotReport(); }, [fetchDepotReport]);
   useEffect(() => { fetchTxHourly(); }, [fetchTxHourly]);
@@ -413,10 +382,8 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
     selectedHourRef.current = h; // update ref synchronously BEFORE any fetch
     setSelectedHour(h);
     fetchAll(selectedDate, selectedRegions, h);
-    fetchTable(0); // re-fetch table with new hour (ref already updated)
     fetchTeamReport(); // re-fetch team report with new hour
     fetchDepotReport(); // re-fetch depot report with new hour
-    setTablePage(0);
   }
   function toggleHiddenLine(key: string) {
     setHiddenLines(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -433,12 +400,7 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
     setConfirm(null);
     selectedHourRef.current = null;
     setSelectedDate(""); setSelectedRegions([]); setSelectedHour(null);
-    fetchAll("", [], null); fetchTable(0); setTablePage(0);
-  }
-  async function handleDeleteRowsConfirmed() {
-    await fetch("/api/rows", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedIds] }) });
-    setConfirm(null);
-    fetchAll(selectedDate, selectedRegions, selectedHour); fetchTable(tablePage);
+    fetchAll("", [], null);
   }
   const handleDriverFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -495,9 +457,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
   const importIsStale = isImportStale(kpiData?.lastImportAt ?? null, now);
   const todayShort = chartData?.todayDate?.slice(5).replace("-", "/") ?? "—";
   const d7Short = chartData?.d7Date?.slice(5).replace("-", "/") ?? "—";
-  const visibleRows = tableData?.rows ?? [];
-  const allSelected = visibleRows.length > 0 && visibleRows.every(r => selectedIds.has(r.id));
-  const totalPages = tableData ? Math.ceil(tableData.total / tableData.limit) : 0;
 
   const sortedTeamReport = useMemo(() => {
     return [...teamReport].map(t => {
@@ -562,11 +521,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
         <ConfirmDialog title="Xóa toàn bộ data" isDark={isDark}
           message="Bạn có chắc muốn xóa toàn bộ dữ liệu? Hành động này không thể hoàn tác."
           onConfirm={handleResetConfirmed} onCancel={() => setConfirm(null)} />
-      )}
-      {confirm?.type === "deleteRows" && (
-        <ConfirmDialog title="Xóa các dòng đã chọn" isDark={isDark}
-          message={`Bạn có chắc muốn xóa ${confirm.count.toLocaleString()} dòng đã chọn?`}
-          onConfirm={handleDeleteRowsConfirmed} onCancel={() => setConfirm(null)} />
       )}
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -1129,74 +1083,6 @@ export default function Dashboard({ onImportNew, refreshKey = 0, currentUser, he
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* ── Table ────────────────────────────────────────────────────── */}
-          <div className={`rounded-xl border shadow-sm overflow-hidden ${cardCls}`}>
-            <div className={`px-4 py-2 border-b flex items-center justify-between gap-3 flex-wrap ${isDark ? "bg-gray-900 border-gray-700" : "bg-gray-50 border-gray-100"}`}>
-              <span className={`text-xs ${textSec}`}>
-                {tableLoading ? "Đang tải..." : `${(tableData?.total ?? 0).toLocaleString()} dòng · trang ${tablePage + 1}/${totalPages || 1}`}
-              </span>
-              <div className="flex items-center gap-2">
-                {selectedIds.size > 0 && (
-                  <button onClick={() => setConfirm({ type: "deleteRows", count: selectedIds.size })}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium">
-                    🗑 Xóa {selectedIds.size.toLocaleString()} dòng
-                  </button>
-                )}
-                <button onClick={() => setTablePage(p => Math.max(0, p - 1))} disabled={tablePage === 0 || tableLoading}
-                  className={`text-xs px-2.5 py-1.5 rounded border disabled:opacity-40 ${isDark ? "border-gray-600 text-gray-300" : "border-gray-300 text-gray-600"}`}>← Trước</button>
-                <button onClick={() => setTablePage(p => Math.min(totalPages - 1, p + 1))} disabled={tablePage >= totalPages - 1 || tableLoading}
-                  className={`text-xs px-2.5 py-1.5 rounded border disabled:opacity-40 ${isDark ? "border-gray-600 text-gray-300" : "border-gray-300 text-gray-600"}`}>Sau →</button>
-              </div>
-            </div>
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={`border-b ${isDark ? "bg-gray-900 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
-                    <th className="px-3 py-2 w-8">
-                      <input type="checkbox" checked={allSelected}
-                        onChange={e => setSelectedIds(e.target.checked ? new Set(visibleRows.map(r => r.id)) : new Set())}
-                        className="w-3.5 h-3.5 cursor-pointer accent-blue-500" />
-                    </th>
-                    {["Order ID", "Create Date", "Status", "Depot", "Total Pay", "Pickup City", "Sap ID", "Distance"].map(h => (
-                      <th key={h} className={`px-3 py-2 text-left font-semibold text-xs whitespace-nowrap ${isDark ? "text-gray-400" : "text-gray-600"}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((row, i) => {
-                    const sg = getStatusGroup(row.status);
-                    const stClr: Record<string, string> = {
-                      complete: isDark ? "bg-emerald-900/40 text-emerald-400" : "bg-emerald-50 text-emerald-700",
-                      processing: isDark ? "bg-blue-900/40 text-blue-400" : "bg-blue-50 text-blue-700",
-                      cancel: isDark ? "bg-red-900/40 text-red-400" : "bg-red-50 text-red-600",
-                      other: isDark ? "bg-gray-700 text-gray-400" : "bg-gray-50 text-gray-600",
-                    };
-                    const sel = selectedIds.has(row.id);
-                    const rowBg = sel ? (isDark ? "bg-blue-900/30" : "bg-blue-50")
-                      : i % 2 === 0 ? (isDark ? "bg-gray-800" : "bg-white") : (isDark ? "bg-gray-800/60" : "bg-gray-50/40");
-                    return (
-                      <tr key={row.id} className={`${rowBg} transition-colors`}>
-                        <td className="px-3 py-1.5 w-8">
-                          <input type="checkbox" checked={sel}
-                            onChange={e => setSelectedIds(prev => { const n = new Set(prev); e.target.checked ? n.add(row.id) : n.delete(row.id); return n; })}
-                            className="w-3.5 h-3.5 cursor-pointer accent-blue-500" />
-                        </td>
-                        <td className={`px-3 py-1.5 font-mono text-xs ${textSec}`}>{row.order_id}</td>
-                        <td className={`px-3 py-1.5 text-xs whitespace-nowrap ${textSec}`}>{row.create_date} {row.create_hour != null ? String(row.create_hour).padStart(2, "0") + "h" : ""}</td>
-                        <td className="px-3 py-1.5"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${stClr[sg]}`}>{row.status}</span></td>
-                        <td className={`px-3 py-1.5 text-xs ${isDark ? "text-gray-300" : "text-gray-700"}`}>{row.depot}</td>
-                        <td className={`px-3 py-1.5 text-xs font-medium text-right ${isDark ? "text-gray-300" : "text-gray-700"}`}>{row.total_pay.toLocaleString("vi-VN")}</td>
-                        <td className={`px-3 py-1.5 text-xs ${textSec}`}>{row.pickup_city}</td>
-                        <td className={`px-3 py-1.5 font-mono text-xs ${textSec}`}>{row.sap_profile_id}</td>
-                        <td className={`px-3 py-1.5 text-xs text-right ${isDark ? "text-gray-400" : "text-gray-600"}`}>{row.distance}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
         </div>
       )}

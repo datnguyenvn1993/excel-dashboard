@@ -59,7 +59,11 @@ export async function DELETE(req: NextRequest) {
   const client = await db.connect();
   try {
     if (all) {
-      await client.query("TRUNCATE orders");
+      // Data now lives in the summary tables (raw `orders` is normally empty),
+      // so a full reset must clear those too.
+      await client.query(
+        "TRUNCATE orders, orders_summary, team_hourly_summary, depot_hourly_summary, compression_log"
+      );
     } else if (ids && ids.length > 0) {
       await client.query("DELETE FROM orders WHERE id = ANY($1::int[])", [ids]);
     }
