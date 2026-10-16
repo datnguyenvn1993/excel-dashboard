@@ -26,12 +26,46 @@ function parseNumber(v: unknown): number | null {
   return null;
 }
 
+const MM = (n: number, y: number | string): string => `${String(n).padStart(2, "0")}/${y}`;
+
+// Normalise many "month" representations to "MM/YYYY".
+// Handles: "MM/YYYY", "M/D/YYYY" / "D/M/YYYY" (day is always 1 in this data),
+// "YYYY-MM[-DD]", Excel serial numbers, and Date objects.
 function normMonth(v: unknown): string | null {
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    return MM(v.getMonth() + 1, v.getFullYear());
+  }
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // Excel serial date (days since 1899-12-30).
+    if (v > 1000) {
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      if (!Number.isNaN(d.getTime())) return MM(d.getUTCMonth() + 1, d.getUTCFullYear());
+    }
+    return null;
+  }
   const s = String(v ?? "").trim();
-  // Accept "M/YYYY" or "MM/YYYY".
-  const m = s.match(/^(\d{1,2})\/(\d{4})$/);
-  if (!m) return null;
-  return `${m[1].padStart(2, "0")}/${m[2]}`;
+  if (!s) return null;
+
+  // "MM/YYYY" or "M/YYYY" (month + year only).
+  let m = s.match(/^(\d{1,2})\/(\d{4})$/);
+  if (m) return MM(parseInt(m[1], 10), m[2]);
+
+  // "M/D/YYYY" or "D/M/YYYY" (three parts). Decide which part is the month:
+  // if a part is > 12 it must be the day; otherwise assume month-first (US).
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    const month = a > 12 ? b : b > 12 ? a : a; // ambiguous → month-first
+    if (month >= 1 && month <= 12) return MM(month, m[3]);
+    return null;
+  }
+
+  // "YYYY-MM" or "YYYY-MM-DD".
+  m = s.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
+  if (m) return MM(parseInt(m[2], 10), m[1]);
+
+  return null;
 }
 
 export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
