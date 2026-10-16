@@ -136,14 +136,32 @@ export function shortId(partnerId: string): string {
   return partnerId.length > 8 ? partnerId.slice(0, 8) + "\u2026" : partnerId;
 }
 
+// Bản ghi người dùng nhập trên trang "Danh mục partner" (lưu DB), ưu tiên hơn PARTNERS.
+let OVERRIDES: Record<string, PartnerInfo> = {};
+
+export function setPartnerOverrides(map: Record<string, PartnerInfo>): void {
+  OVERRIDES = map;
+}
+
+function lookup(partnerId: string): PartnerInfo | undefined {
+  const o = OVERRIDES[partnerId];
+  const d = PARTNERS[partnerId];
+  if (!o) return d;
+  return { name: o.name || d?.name || "", mien: o.mien || d?.mien || "" };
+}
+
 /** Display name for a partner_id; falls back to a short id when unmapped. */
 export function partnerName(partnerId: string): string {
-  const p = PARTNERS[partnerId];
+  const p = lookup(partnerId);
   return p && p.name ? p.name : shortId(partnerId);
 }
 
 /** Region for a partner_id; empty string when unknown. */
 export function partnerMien(partnerId: string): string {
-  const p = PARTNERS[partnerId];
-  return p ? p.mien : "";
+  return lookup(partnerId)?.mien ?? "";
+}
+
+/** True when the partner_id has a name (default list or user-entered). */
+export function hasPartnerName(partnerId: string): boolean {
+  return !!lookup(partnerId)?.name;
 }

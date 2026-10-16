@@ -22,6 +22,7 @@ interface PivotTableProps {
   getValue: (rowKey: string, metric: string, month: string) => number | undefined;
   placeholder?: boolean; // chưa có dữ liệu → hiển thị khung trống
   sortable?: boolean; // mặc định true
+  csvFileName?: string; // có thì hiện nút Xuất CSV (xuất đúng những gì bảng đang hiển thị)
 }
 
 type SortDir = "desc" | "asc";
@@ -61,6 +62,7 @@ export default function PivotTable({
   getValue,
   placeholder,
   sortable = true,
+  csvFileName,
 }: PivotTableProps) {
   const canSort = sortable && !placeholder;
   const [sort, setSort] = useState<SortState | null>(null);
@@ -109,6 +111,32 @@ export default function PivotTable({
     return out;
   }, [rows, sort, dir, sortMetric, getValue]);
 
+  // Xuất CSV theo đúng hàng (đã sắp xếp), chỉ số (đã lọc) và tháng đang hiển thị.
+  // Giá trị là số thô để Excel tính toán được; chỉ số dạng % được nhân 100.
+  const exportCsv = () => {
+    const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+    const header = [labelHeader, subHeader, "Chỉ số", ...months.map((m) => monthLabel(m, multiYear))];
+    const lines = [header.map(esc).join(",")];
+    for (const r of sortedRows) {
+      for (const metric of metrics) {
+        const pct = metricDef(metric).format === "pct";
+        const cells = months.map((m) => {
+          const v = getValue(r.key, metric, m);
+          if (v === undefined) return "";
+          return String(pct ? Math.round(v * 10000) / 100 : v);
+        });
+        lines.push([esc(r.label), esc(r.sub), esc(pct ? `${metric} (%)` : metric), ...cells].join(","));
+      }
+    }
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = csvFileName ?? "bao-cao.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const arrow = (active: boolean) =>
     active ? (dir === "asc" ? " ▲" : " ▼") : <span className="text-gray-300"> ⇅</span>;
 
@@ -119,6 +147,7 @@ export default function PivotTable({
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
       <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 border-b border-gray-200">
         <h2 className="text-sm font-bold text-gray-700">{title}</h2>
+        <div className="flex items-center gap-3 flex-wrap">
         {canSort && metrics.length > 1 && (
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
             Sắp xếp cột tháng theo
@@ -135,6 +164,15 @@ export default function PivotTable({
             </select>
           </label>
         )}
+        {csvFileName && !placeholder && (
+          <button
+            onClick={exportCsv}
+            className="px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            ⬇ Xuất CSV
+          </button>
+        )}
+        </div>
       </div>
       <div className="overflow-auto max-h-[70vh]">
         <table className="text-xs border-collapse">

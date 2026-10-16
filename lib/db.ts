@@ -114,6 +114,17 @@ export async function initDB() {
       )
     `);
 
+    // Danh mục partner do người dùng nhập thêm/sửa (ghi đè danh sách mặc định trong lib/partners.ts).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS partner_directory (
+        partner_id  TEXT PRIMARY KEY,
+        name        TEXT NOT NULL DEFAULT '',
+        mien        TEXT NOT NULL DEFAULT '',
+        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+        updated_by  TEXT
+      )
+    `);
+
     // PBKDF2: 100000 iterations, SHA-256, 32 bytes salt, 64 bytes hash
     const adminRes = await client.query(`SELECT COUNT(*) FROM users`);
     const brokenHash = "ee2e1ba9ea215b2e9ccf7ed6cc8fcbcf958fbc502f6ae64d8aab47ca05fc58c7:a9f4ffc06fcc316ff7ec9945df84b80693a1c31afcc5531d27dbbe5ca3d387ae4c6d4dbd2ae4c9e422f28edfd4075b9ca8de36e9ac870c9eb77b07dcf7da011b";

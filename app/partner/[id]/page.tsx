@@ -6,6 +6,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -17,6 +18,7 @@ import {
 import { KpiDataset } from "@/types/data";
 import { fetchServerData, monthLabel } from "@/lib/storage";
 import { partnerMien, partnerName } from "@/lib/partners";
+import { usePartnerDirectory } from "@/lib/usePartnerDirectory";
 import { METRIC_ORDER, formatValue, growthPct, metricDef } from "@/lib/metrics";
 import PivotTable from "@/components/PivotTable";
 
@@ -61,6 +63,21 @@ function ChartCard({
   );
 }
 
+// Nhãn giá trị trên đầu cột/điểm (một dòng, không bị xuống dòng như label mặc định).
+function valueLabel(format: (v: unknown) => string, dy = -6) {
+  // eslint-disable-next-line react/display-name
+  return (props: { x?: number | string; y?: number | string; width?: number | string; value?: unknown }) => {
+    const x = Number(props.x ?? 0) + Number(props.width ?? 0) / 2;
+    const y = Number(props.y ?? 0) + dy;
+    if (props.value === undefined || props.value === null) return null;
+    return (
+      <text x={x} y={y} textAnchor="middle" fill="#374151" fontSize={10}>
+        {format(props.value)}
+      </text>
+    );
+  };
+}
+
 const axisProps = {
   tick: { fill: INK_MUTED, fontSize: 11 },
   tickLine: false,
@@ -71,7 +88,7 @@ function SingleBar({ data, metric }: { data: Point[]; metric: string }) {
   const f = fmt(metric);
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+      <BarChart data={data} margin={{ top: 22, right: 8, left: 8, bottom: 0 }}>
         <CartesianGrid vertical={false} stroke={GRID} />
         <XAxis dataKey="label" {...axisProps} />
         <YAxis {...axisProps} axisLine={false} width={64} tickFormatter={f} />
@@ -81,7 +98,15 @@ function SingleBar({ data, metric }: { data: Point[]; metric: string }) {
           formatter={(v) => [f(v), metric]}
           labelFormatter={(_, p) => (p?.[0]?.payload as Point | undefined)?.month ?? ""}
         />
-        <Bar dataKey={metric} fill={C_BLUE} radius={[4, 4, 0, 0]} maxBarSize={28} />
+        <Bar
+          dataKey={metric}
+          fill={C_BLUE}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={28}
+          isAnimationActive={false}
+        >
+          <LabelList dataKey={metric} content={valueLabel(f)} />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -99,9 +124,9 @@ function Lines({
   const f = fmt(series[0].metric);
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+      <LineChart data={data} margin={{ top: 22, right: 24, left: 8, bottom: 0 }}>
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="label" {...axisProps} />
+        <XAxis dataKey="label" {...axisProps} padding={{ left: 20, right: 20 }} />
         <YAxis
           {...axisProps}
           axisLine={false}
@@ -127,7 +152,10 @@ function Lines({
             dot={{ r: 4, strokeWidth: 2, fill: "#fff" }}
             activeDot={{ r: 5 }}
             connectNulls
-          />
+            isAnimationActive={false}
+          >
+            <LabelList dataKey={s.metric} content={valueLabel(fmt(s.metric), -10)} />
+          </Line>
         ))}
       </LineChart>
     </ResponsiveContainer>
@@ -152,8 +180,10 @@ export default function PartnerDetailPage() {
     };
   }, [partnerId]);
 
-  const name = partnerName(partnerId);
-  const mien = partnerMien(partnerId);
+  // Áp tên/miền nhập ở trang Danh mục partner; dirVersion đổi → render lại với tên mới.
+  const { version: dirVersion } = usePartnerDirectory();
+  const name = useMemo(() => partnerName(partnerId), [partnerId, dirVersion]);
+  const mien = useMemo(() => partnerMien(partnerId), [partnerId, dirVersion]);
 
   useEffect(() => {
     document.title = `${name} · Phân tích KPI`;

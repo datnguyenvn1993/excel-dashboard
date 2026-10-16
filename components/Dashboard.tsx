@@ -5,7 +5,9 @@ import { KpiDataset } from "@/types/data";
 import { MIEN_ORDER, partnerName, partnerMien } from "@/lib/partners";
 import { METRIC_ORDER, formatValue, aggregateMetric } from "@/lib/metrics";
 import PivotTable, { PivotRow } from "@/components/PivotTable";
-import { monthKey, monthLabel } from "@/lib/storage";
+import { formatImportTime, monthKey, monthLabel } from "@/lib/storage";
+import { usePartnerDirectory } from "@/lib/usePartnerDirectory";
+import AppNav from "@/components/AppNav";
 
 interface DashboardProps {
   dataset: KpiDataset | null;
@@ -27,6 +29,8 @@ const PLACEHOLDER_MONTHS = [
 
 export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
   const hasData = !!dataset && dataset.rows.length > 0;
+  // Tên/miền nhập thêm ở trang Danh mục partner (DB) — version đổi thì tính lại.
+  const { version: dirVersion } = usePartnerDirectory();
 
   // ── Build lookup + partner metadata ───────────────────────────────────────
   const { index, partners, metricsPresent, allMonths, multiYear } = useMemo(() => {
@@ -62,7 +66,8 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     const allMonths = (dataset?.months ?? []).slice();
     const years = new Set(allMonths.map((m) => m.split("/")[1]));
     return { index, partners, metricsPresent, allMonths, multiYear: years.size > 1 };
-  }, [dataset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataset, dirVersion]);
 
   // ── Filter state ──────────────────────────────────────────────────────────
   const [selMiens, setSelMiens] = useState<Set<string>>(new Set());
@@ -134,14 +139,16 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     const lastMonth = visibleMonths[visibleMonths.length - 1];
     let revenue = 0;
     let trips = 0;
+    let cars = 0;
     if (lastMonth) {
       for (const p of visiblePartners) {
         const byMetric = index.get(p.id);
         revenue += byMetric?.get("Doanh thu")?.get(lastMonth) ?? 0;
         trips += byMetric?.get("Tổng cuốc")?.get(lastMonth) ?? 0;
+        cars += byMetric?.get("Số xe vận doanh TB mỗi ngày")?.get(lastMonth) ?? 0;
       }
     }
-    return { lastMonth, revenue, trips, partnerCount: visiblePartners.length };
+    return { lastMonth, revenue, trips, cars, partnerCount: visiblePartners.length };
   }, [visiblePartners, visibleMonths, index]);
 
   // ── Rows + value getters for the two pivot tables ──────────────────────────
@@ -203,36 +210,6 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     setter(n);
   };
 
-  // ── CSV export of the current pivot ─────────────────────────────────────────
-  const exportCsv = () => {
-    const header = [
-      "Tên hãng",
-      "Miền",
-      "Chỉ số",
-      ...displayMonths.map((m) => monthLabel(m, multiYear)),
-    ];
-    const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-    const lines = [header.map(esc).join(",")];
-    for (const p of visiblePartners) {
-      const byMetric = index.get(p.id);
-      for (const metric of visibleMetrics) {
-        const byMonth = byMetric?.get(metric);
-        const cells = displayMonths.map((m) => {
-          const v = byMonth?.get(m);
-          return v === undefined ? "" : String(v);
-        });
-        lines.push([esc(p.name), esc(p.mien), esc(metric), ...cells].join(","));
-      }
-    }
-    const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "bao-cao-kpi-partner.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   // Columns for display (fallback to placeholder when empty).
   const monthCols = hasData ? displayMonths : PLACEHOLDER_MONTHS.slice().reverse();
   const monthColsMultiYear = hasData ? multiYear : false;
@@ -259,16 +236,14 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
                   }`
                 : "Chưa có dữ liệu — bấm Import file để bắt đầu"}
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {hasData && (
-              <button
-                onClick={exportCsv}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/30"
-              >
-                ⬇ Xuất CSV
-              </button>
+            {hasData && formatImportTime(dataset?.uploadedAt) && (
+              <p className="text-[11px] text-cyan-50/90 mt-0.5">
+                🕒 Import lần cuối: {formatImportTime(dataset?.uploadedAt)}
+              </p>
             )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <AppNav active="/" />
             <button
               onClick={onImportNew}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-teal-700 hover:bg-cyan-50 shadow-sm"
@@ -281,7 +256,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
 
       <main className="p-4 sm:p-6 space-y-4">
         {/* ── Summary cards ─────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {[
             { label: "Số hãng", value: hasData ? String(summary.partnerCount) : "--" },
             { label: "Số tháng", value: hasData ? String(visibleMonths.length) : "--" },
@@ -292,6 +267,10 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
             {
               label: `Tổng cuốc ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
               value: hasData ? formatValue(summary.trips, "int") : "--",
+            },
+            {
+              label: `Tổng số xe vận doanh TB/ngày ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
+              value: hasData ? formatValue(summary.cars, "int") : "--",
             },
           ].map((c) => (
             <div key={c.label} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
@@ -459,6 +438,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
           multiYear={monthColsMultiYear}
           getValue={getMienValue}
           placeholder={!hasData}
+          csvFileName="bao-cao-kpi-theo-mien.csv"
         />
         <PivotTable
           title="Theo hãng (bấm tên hãng để xem phân tích chi tiết)"
@@ -470,6 +450,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
           multiYear={monthColsMultiYear}
           getValue={getPartnerValue}
           placeholder={!hasData}
+          csvFileName="bao-cao-kpi-theo-hang.csv"
         />
 
         {!hasData && (

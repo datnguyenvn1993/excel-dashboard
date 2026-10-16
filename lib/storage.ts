@@ -167,3 +167,18 @@ export function monthLabel(m: string, multiYear: boolean): string {
   const mo = parseInt(mm, 10);
   return multiYear ? `T${mo}/${yyyy.slice(2)}` : `T${mo}`;
 }
+
+/** "16/10/2026 10:55" theo giờ Việt Nam; rỗng nếu không hợp lệ. */
+export function formatImportTime(iso: string | undefined | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
