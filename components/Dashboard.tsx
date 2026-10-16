@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { KpiDataset } from "@/types/data";
 import { MIEN_ORDER, partnerName, partnerMien } from "@/lib/partners";
-import { METRIC_ORDER, metricDef, formatValue, growthPct } from "@/lib/metrics";
+import { METRIC_ORDER, formatValue, aggregateMetric } from "@/lib/metrics";
+import PivotTable, { PivotRow } from "@/components/PivotTable";
 import { monthKey, monthLabel } from "@/lib/storage";
 
 interface DashboardProps {
@@ -23,29 +24,6 @@ type Index = Map<string, Map<string, Map<string, number>>>;
 const PLACEHOLDER_MONTHS = [
   "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12",
 ].map((m) => `${m}/2026`);
-
-function GrowthArrow({
-  cur,
-  prev,
-  higherIsBetter,
-}: {
-  cur: number | undefined;
-  prev: number | undefined;
-  higherIsBetter: boolean;
-}) {
-  const g = growthPct(cur, prev);
-  // Hide arrows that would round to 0% to keep the grid readable.
-  if (g === null || Math.abs(g) < 0.5) return null;
-  const up = g > 0;
-  const good = up === higherIsBetter;
-  const color = good ? "text-emerald-600" : "text-red-500";
-  return (
-    <span className={`ml-1 text-[10px] font-semibold ${color}`}>
-      {up ? "▲" : "▼"}
-      {Math.abs(g).toFixed(0)}%
-    </span>
-  );
-}
 
 export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
   const hasData = !!dataset && dataset.rows.length > 0;
@@ -165,6 +143,58 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     }
     return { lastMonth, revenue, trips, partnerCount: visiblePartners.length };
   }, [visiblePartners, visibleMonths, index]);
+
+  // ── Rows + value getters for the two pivot tables ──────────────────────────
+  const partnerRows: PivotRow[] = useMemo(
+    () =>
+      visiblePartners.map((p) => ({
+        key: p.id,
+        label: p.name,
+        sub: p.mien,
+        href: `/partner/${encodeURIComponent(p.id)}`,
+      })),
+    [visiblePartners]
+  );
+  const getPartnerValue = useCallback(
+    (id: string, metric: string, month: string) => index.get(id)?.get(metric)?.get(month),
+    [index]
+  );
+
+  // Bảng theo Miền: gộp các hãng đang hiển thị (dùng chung bộ lọc).
+  const { mienRows, mienIndex } = useMemo(() => {
+    const byMien = new Map<string, string[]>();
+    for (const p of visiblePartners) {
+      const k = p.mien || "Chưa rõ miền";
+      if (!byMien.has(k)) byMien.set(k, []);
+      byMien.get(k)!.push(p.id);
+    }
+    const order = [...(MIEN_ORDER as readonly string[]), "Chưa rõ miền"];
+    const miens = Array.from(byMien.keys()).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const mienIndex: Index = new Map();
+    for (const mien of miens) {
+      const ids = byMien.get(mien)!;
+      const byMetric = new Map<string, Map<string, number>>();
+      for (const metric of visibleMetrics) {
+        const byMonth = new Map<string, number>();
+        for (const month of visibleMonths) {
+          const v = aggregateMetric(metric, ids, (id, mt) => index.get(id)?.get(mt)?.get(month));
+          if (v !== undefined) byMonth.set(month, v);
+        }
+        byMetric.set(metric, byMonth);
+      }
+      mienIndex.set(mien, byMetric);
+    }
+    const mienRows: PivotRow[] = miens.map((m) => ({
+      key: m,
+      label: m,
+      sub: `${byMien.get(m)!.length} hãng`,
+    }));
+    return { mienRows, mienIndex };
+  }, [visiblePartners, visibleMetrics, visibleMonths, index]);
+  const getMienValue = useCallback(
+    (mien: string, metric: string, month: string) => mienIndex.get(mien)?.get(metric)?.get(month),
+    [mienIndex]
+  );
 
   const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
     const n = new Set(set);
@@ -418,121 +448,29 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
           </div>
         )}
 
-        {/* ── Pivot table ───────────────────────────────────────────────────── */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-auto max-h-[70vh]">
-            <table className="text-xs border-collapse">
-              <thead className="sticky top-0 z-20">
-                <tr className="bg-gray-100 text-gray-600">
-                  <th className="sticky left-0 z-10 bg-gray-100 text-left px-3 py-2 font-semibold border-b border-r border-gray-200 min-w-[180px]">
-                    Tên hãng
-                  </th>
-                  <th className="text-left px-3 py-2 font-semibold border-b border-r border-gray-200 min-w-[90px]">
-                    Miền
-                  </th>
-                  <th className="text-left px-3 py-2 font-semibold border-b border-r border-gray-200 min-w-[210px]">
-                    Chỉ số
-                  </th>
-                  {monthCols.map((m) => (
-                    <th
-                      key={m}
-                      className="text-right px-3 py-2 font-semibold border-b border-gray-200 min-w-[88px] whitespace-nowrap"
-                    >
-                      {monthLabel(m, monthColsMultiYear)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {!hasData ? (
-                  METRIC_ORDER.slice(0, 5).map((metric, i) => (
-                    <tr key={metric} className={i % 2 ? "bg-gray-50/50" : ""}>
-                      {i === 0 && (
-                        <>
-                          <td
-                            rowSpan={5}
-                            className="sticky left-0 bg-white px-3 py-2 border-r border-gray-200 align-top text-gray-300"
-                          >
-                            —
-                          </td>
-                          <td
-                            rowSpan={5}
-                            className="px-3 py-2 border-r border-gray-200 align-top text-gray-300"
-                          >
-                            —
-                          </td>
-                        </>
-                      )}
-                      <td className="px-3 py-2 border-r border-gray-200 text-gray-400">{metric}</td>
-                      {monthCols.map((m) => (
-                        <td key={m} className="px-3 py-2 text-right text-gray-300">
-                          --
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : visiblePartners.length === 0 || visibleMetrics.length === 0 ? (
-                  <tr>
-                    <td colSpan={3 + monthCols.length} className="px-4 py-10 text-center text-gray-400">
-                      Không có dữ liệu khớp bộ lọc.
-                    </td>
-                  </tr>
-                ) : (
-                  visiblePartners.map((p, pi) => {
-                    const byMetric = index.get(p.id);
-                    const rowBg = pi % 2 ? "bg-gray-50/40" : "bg-white";
-                    return visibleMetrics.map((metric, mi) => {
-                      const def = metricDef(metric);
-                      const byMonth = byMetric?.get(metric);
-                      const first = mi === 0;
-                      return (
-                        <tr
-                          key={p.id + "|" + metric}
-                          className={`${rowBg} ${first ? "border-t-2 border-gray-200" : ""}`}
-                        >
-                          {first && (
-                            <>
-                              <td
-                                rowSpan={visibleMetrics.length}
-                                className={`sticky left-0 z-[1] ${rowBg} px-3 py-2 border-r border-gray-200 align-top font-medium text-gray-800`}
-                              >
-                                {p.name}
-                              </td>
-                              <td
-                                rowSpan={visibleMetrics.length}
-                                className="px-3 py-2 border-r border-gray-200 align-top text-gray-500 whitespace-nowrap"
-                              >
-                                {p.mien || "—"}
-                              </td>
-                            </>
-                          )}
-                          <td className="px-3 py-1.5 border-r border-gray-100 text-gray-600 whitespace-nowrap">
-                            {metric}
-                          </td>
-                          {displayMonths.map((m, idx) => {
-                            const v = byMonth?.get(m);
-                            // Tháng liền trước (theo thời gian) nằm ở cột bên phải.
-                            const prevMonth = displayMonths[idx + 1];
-                            const prev = prevMonth ? byMonth?.get(prevMonth) : undefined;
-                            return (
-                              <td
-                                key={m}
-                                className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums"
-                              >
-                                <span className="text-gray-800">{formatValue(v, def.format)}</span>
-                                <GrowthArrow cur={v} prev={prev} higherIsBetter={def.higherIsBetter} />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    });
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        {/* ── Pivot tables ──────────────────────────────────────────────────── */}
+        <PivotTable
+          title="Theo Miền"
+          labelHeader="Miền"
+          subHeader="Số hãng"
+          rows={mienRows}
+          metrics={hasData ? visibleMetrics : METRIC_ORDER}
+          months={monthCols}
+          multiYear={monthColsMultiYear}
+          getValue={getMienValue}
+          placeholder={!hasData}
+        />
+        <PivotTable
+          title="Theo hãng (bấm tên hãng để xem phân tích chi tiết)"
+          labelHeader="Tên hãng"
+          subHeader="Miền"
+          rows={partnerRows}
+          metrics={hasData ? visibleMetrics : METRIC_ORDER}
+          months={monthCols}
+          multiYear={monthColsMultiYear}
+          getValue={getPartnerValue}
+          placeholder={!hasData}
+        />
 
         {!hasData && (
           <div className="flex flex-col items-center gap-3 py-6">

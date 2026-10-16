@@ -3,27 +3,37 @@
 
 export type MetricFormat = "pct" | "vnd" | "vndInt" | "dec1" | "dec2" | "int";
 
+// Cách gộp một chỉ số từ nhiều hãng lên cấp Miền:
+// - "sum": cộng dồn (Doanh thu, Tổng cuốc, Số xe...)
+// - { weight }: trung bình có trọng số theo chỉ số khác của từng hãng
+//   (vd. AR/Hủy/Rating theo Tổng cuốc, chỉ số "mỗi TX" theo Số xe vận doanh).
+export type MetricAgg = "sum" | { weight: string };
+
+const W_TRIPS: MetricAgg = { weight: "Tổng cuốc" };
+const W_CARS: MetricAgg = { weight: "Số xe vận doanh TB mỗi ngày" };
+
 export interface MetricDef {
   name: string; // exact "Chỉ số" value from the data
   format: MetricFormat;
   higherIsBetter: boolean;
+  agg: MetricAgg;
 }
 
 // Order follows the natural order of the source file.
 export const METRICS: MetricDef[] = [
-  { name: "AR", format: "pct", higherIsBetter: true },
-  { name: "Hủy", format: "pct", higherIsBetter: false },
-  { name: "Rating", format: "dec2", higherIsBetter: true },
-  { name: "Doanh thu", format: "vnd", higherIsBetter: true },
-  { name: "Tổng cuốc", format: "int", higherIsBetter: true },
-  { name: "Doanh thu TB mỗi cuốc", format: "vndInt", higherIsBetter: true },
-  { name: "Doanh thu TB mỗi TX mỗi ngày", format: "vndInt", higherIsBetter: true },
-  { name: "Cuốc xe TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true },
-  { name: "Tỉ lệ hoàn thành cuốc", format: "pct", higherIsBetter: true },
-  { name: "Tỉ lệ vận doanh trên tổng xe", format: "pct", higherIsBetter: true },
-  { name: "Số xe vận doanh TB mỗi ngày", format: "dec1", higherIsBetter: true },
-  { name: "Số giờ trực tuyến TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true },
-  { name: "Số giờ vận doanh TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true },
+  { name: "AR", format: "pct", higherIsBetter: true, agg: W_TRIPS },
+  { name: "Hủy", format: "pct", higherIsBetter: false, agg: W_TRIPS },
+  { name: "Rating", format: "dec2", higherIsBetter: true, agg: W_TRIPS },
+  { name: "Doanh thu", format: "vnd", higherIsBetter: true, agg: "sum" },
+  { name: "Tổng cuốc", format: "int", higherIsBetter: true, agg: "sum" },
+  { name: "Doanh thu TB mỗi cuốc", format: "vndInt", higherIsBetter: true, agg: W_TRIPS },
+  { name: "Doanh thu TB mỗi TX mỗi ngày", format: "vndInt", higherIsBetter: true, agg: W_CARS },
+  { name: "Cuốc xe TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true, agg: W_CARS },
+  { name: "Tỉ lệ hoàn thành cuốc", format: "pct", higherIsBetter: true, agg: W_TRIPS },
+  { name: "Tỉ lệ vận doanh trên tổng xe", format: "pct", higherIsBetter: true, agg: W_CARS },
+  { name: "Số xe vận doanh TB mỗi ngày", format: "dec1", higherIsBetter: true, agg: "sum" },
+  { name: "Số giờ trực tuyến TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true, agg: W_CARS },
+  { name: "Số giờ vận doanh TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true, agg: W_CARS },
 ];
 
 export const METRIC_ORDER: string[] = METRICS.map((m) => m.name);
@@ -33,7 +43,47 @@ const METRIC_BY_NAME: Record<string, MetricDef> = Object.fromEntries(
 );
 
 export function metricDef(name: string): MetricDef {
-  return METRIC_BY_NAME[name] ?? { name, format: "dec1", higherIsBetter: true };
+  return METRIC_BY_NAME[name] ?? { name, format: "dec1", higherIsBetter: true, agg: W_TRIPS };
+}
+
+/**
+ * Gộp giá trị một chỉ số của nhiều hãng (cùng tháng) thành một số.
+ * `get(partnerId, metric)` trả giá trị của hãng; bỏ qua hãng thiếu dữ liệu.
+ * Trung bình có trọng số rơi về trung bình thường nếu không hãng nào có trọng số.
+ */
+export function aggregateMetric(
+  metric: string,
+  partnerIds: string[],
+  get: (partnerId: string, metric: string) => number | undefined
+): number | undefined {
+  const { agg } = metricDef(metric);
+  let sum = 0;
+  let n = 0;
+  if (agg === "sum") {
+    for (const id of partnerIds) {
+      const v = get(id, metric);
+      if (v !== undefined) {
+        sum += v;
+        n++;
+      }
+    }
+    return n ? sum : undefined;
+  }
+  let wSum = 0;
+  let wvSum = 0;
+  for (const id of partnerIds) {
+    const v = get(id, metric);
+    if (v === undefined) continue;
+    sum += v;
+    n++;
+    const w = get(id, agg.weight);
+    if (w !== undefined && w > 0) {
+      wSum += w;
+      wvSum += w * v;
+    }
+  }
+  if (!n) return undefined;
+  return wSum > 0 ? wvSum / wSum : sum / n;
 }
 
 const nf = (min: number, max: number) =>
