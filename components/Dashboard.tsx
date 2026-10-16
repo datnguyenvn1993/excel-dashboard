@@ -123,6 +123,9 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     return allMonths.filter((m) => monthKey(m) >= lo && monthKey(m) <= hi);
   }, [allMonths, startMonth, endMonth]);
 
+  // Thứ tự hiển thị cột: tháng gần nhất bên trái.
+  const displayMonths = useMemo(() => visibleMonths.slice().reverse(), [visibleMonths]);
+
   const visibleMiens = useMemo(
     () => (MIEN_ORDER as readonly string[]).filter((m) => partners.some((p) => p.mien === m)),
     [partners]
@@ -176,7 +179,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
       "Tên hãng",
       "Miền",
       "Chỉ số",
-      ...visibleMonths.map((m) => monthLabel(m, multiYear)),
+      ...displayMonths.map((m) => monthLabel(m, multiYear)),
     ];
     const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const lines = [header.map(esc).join(",")];
@@ -184,7 +187,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
       const byMetric = index.get(p.id);
       for (const metric of visibleMetrics) {
         const byMonth = byMetric?.get(metric);
-        const cells = visibleMonths.map((m) => {
+        const cells = displayMonths.map((m) => {
           const v = byMonth?.get(m);
           return v === undefined ? "" : String(v);
         });
@@ -201,7 +204,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
   };
 
   // Columns for display (fallback to placeholder when empty).
-  const monthCols = hasData ? visibleMonths : PLACEHOLDER_MONTHS;
+  const monthCols = hasData ? displayMonths : PLACEHOLDER_MONTHS.slice().reverse();
   const monthColsMultiYear = hasData ? multiYear : false;
 
   const selectCls =
@@ -506,9 +509,11 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
                           <td className="px-3 py-1.5 border-r border-gray-100 text-gray-600 whitespace-nowrap">
                             {metric}
                           </td>
-                          {visibleMonths.map((m, idx) => {
+                          {displayMonths.map((m, idx) => {
                             const v = byMonth?.get(m);
-                            const prev = idx > 0 ? byMonth?.get(visibleMonths[idx - 1]) : undefined;
+                            // Tháng liền trước (theo thời gian) nằm ở cột bên phải.
+                            const prevMonth = displayMonths[idx + 1];
+                            const prev = prevMonth ? byMonth?.get(prevMonth) : undefined;
                             return (
                               <td
                                 key={m}
