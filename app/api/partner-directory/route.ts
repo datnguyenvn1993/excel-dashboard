@@ -9,11 +9,19 @@ import { verifyToken } from "@/lib/auth";
 
 const MAX_ENTRIES = 2000;
 
-async function username(req: NextRequest): Promise<string | null> {
+async function session(req: NextRequest) {
   const token = req.cookies.get("session")?.value;
-  const p = token ? await verifyToken(token) : null;
-  return p?.username ?? null;
+  return token ? await verifyToken(token) : null;
 }
+
+// Chỉ admin được sửa danh mục; GET mở cho mọi người dùng đã đăng nhập (dashboard cần tên).
+async function requireAdmin(req: NextRequest) {
+  const p = await session(req);
+  return p && p.role === "admin" ? p : null;
+}
+
+const FORBIDDEN = () =>
+  NextResponse.json({ error: "Chỉ admin được sửa danh mục partner" }, { status: 403 });
 
 export async function GET() {
   await initDB();
@@ -44,6 +52,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const admin = await requireAdmin(req);
+  if (!admin) return FORBIDDEN();
   await initDB();
   let body: { entries?: unknown };
   try {
@@ -70,7 +80,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Không có partner_id hợp lệ" }, { status: 400 });
   }
   const ids = Array.from(byId.keys());
-  const who = await username(req);
+  const who = admin.username;
   const client = await db.connect();
   try {
     await client.query(
@@ -96,6 +106,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!(await requireAdmin(req))) return FORBIDDEN();
   await initDB();
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Thiếu id" }, { status: 400 });

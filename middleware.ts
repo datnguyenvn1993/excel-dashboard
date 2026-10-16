@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // If authenticated but trying to hit /admin without admin role
-    if (pathname.startsWith('/admin') && payload.role !== 'admin') {
+    if ((pathname.startsWith('/admin') || pathname.startsWith('/partners')) && payload.role !== 'admin') {
         return NextResponse.redirect(new URL('/', request.url));
     }
 
