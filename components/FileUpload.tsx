@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { KpiDataset, KpiRow } from "@/types/data";
-import { saveData, sortMonths } from "@/lib/storage";
+import { fetchServerData, saveData, uploadToServer } from "@/lib/storage";
 
 // Target columns (case-insensitive match against the file's header row).
 const COL_PARTNER = "partner_id";
@@ -11,7 +11,7 @@ const COL_METRIC = "Chỉ số";
 const COL_VALUE = "Giá trị";
 
 interface FileUploadProps {
-  onUploaded: (data: KpiDataset) => void;
+  onUploaded: (data: KpiDataset, result: { inserted: number; updated: number }) => void;
   onClose?: () => void;
 }
 
@@ -122,9 +122,8 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
           return;
         }
 
-        const rows: KpiRow[] = [];
-        const monthSet = new Set<string>();
-        const partnerSet = new Set<string>();
+        // Khử trùng trong file theo (partner, tháng, chỉ số): dòng sau ghi đè dòng trước.
+        const byKey = new Map<string, KpiRow>();
 
         for (const raw of rawRows) {
           const partnerId = String(raw[kPartner] ?? "").trim();
@@ -132,10 +131,14 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
           const metric = String(raw[kMetric] ?? "").trim();
           const value = parseNumber(raw[kValue]);
           if (!partnerId || !month || !metric || value === null) continue;
-          rows.push({ partnerId, month, metric, value });
-          monthSet.add(month);
-          partnerSet.add(partnerId);
+          byKey.set(`${partnerId}\u0001${month}\u0001${metric}`, {
+            partnerId,
+            month,
+            metric,
+            value,
+          });
         }
+        const rows = Array.from(byKey.values());
 
         console.log(`Giữ lại ${rows.length}/${rawRows.length} rows sau khi lọc`);
 
@@ -145,20 +148,35 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
           return;
         }
 
-        const dataset: KpiDataset = {
-          rows,
-          months: sortMonths(Array.from(monthSet)),
-          partnerIds: Array.from(partnerSet),
-          fileName: file.name,
-          uploadedAt: new Date().toISOString(),
-          rowCount: rows.length,
-        };
+        setStatus(`Đang lưu lên server 0/${rows.length} dòng...`);
+        let result: { inserted: number; updated: number };
+        try {
+          result = await uploadToServer(rows, file.name, (done, total) =>
+            setStatus(`Đang lưu lên server ${done}/${total} dòng...`)
+          );
+        } catch (e) {
+          console.error("Upload error:", e);
+          setError(
+            `Lưu lên server thất bại: ${e instanceof Error ? e.message : "lỗi không xác định"}. Vui lòng thử lại.`
+          );
+          setIsBusy(false);
+          return;
+        }
+        console.log(`Server: ${result.inserted} dòng mới, ${result.updated} dòng ghi đè`);
 
-        setStatus("Đang lưu vào trình duyệt...");
-        await saveData(dataset);
+        // Tải lại toàn bộ dữ liệu đã gộp trên server (gồm cả các tháng/partner cũ).
+        setStatus("Đang tải lại dữ liệu...");
+        const dataset = await fetchServerData();
+        if (!dataset) {
+          setError("Không đọc lại được dữ liệu từ server.");
+          setIsBusy(false);
+          return;
+        }
+        await saveData(dataset).catch(() => {});
 
         setStatus("");
-        onUploaded(dataset);
+        setIsBusy(false);
+        onUploaded(dataset, result);
       } catch (err) {
         console.error("Parse error:", err);
         setError("Không thể đọc file. Vui lòng kiểm tra lại định dạng.");
