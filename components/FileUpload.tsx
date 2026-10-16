@@ -1,84 +1,63 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { aggregate } from "@/lib/aggregate";
+import { useCallback, useState } from "react";
+import { KpiDataset, KpiRow } from "@/types/data";
+import { saveData, sortMonths } from "@/lib/storage";
 
-// Column aliases (case-insensitive match)
-const COL_ALIASES: Record<string, string[]> = {
-  order_id: ["order id", "order_id", "orderid"],
-  status: ["status order", "status", "order status", "trang thai"],
-  depot: ["city depot", "depot", "city_depot", "kho"],
-  total_pay: ["total fee", "total fee display", "total_fee", "totalfee", "total pay", "total pay display", "total_pay", "totalpay", "payment", "tong tien"],
-  pickup_city: ["driver group id", "driver group", "driver_group_id", "pickup city", "pickup_city"],
-  create_time: ["create date", "create time", "create_date", "create_time", "created at", "ngay tao", "thoi gian tao"],
-  sap_profile_id: ["sap id", "sap profile id", "sap_id", "sap_profile_id", "sap profile", "sapid"],
-  distance: ["distance", "khoang cach"],
-  cancel_by: ["cancel by", "cancel_by", "cancelled by", "nguoi huy", "người hủy", "huy_boi", "hủy bởi"],
-};
-
-interface ImportRow {
-  order_id: string;
-  status: string;
-  depot: string;
-  total_pay: number;
-  pickup_city: string;
-  create_date: string;
-  create_hour: number;
-  sap_profile_id: string;
-  distance: string;
-  cancel_by: string;
-}
+// Target columns (case-insensitive match against the file's header row).
+const COL_PARTNER = "partner_id";
+const COL_MONTH = "Tháng";
+const COL_METRIC = "Chỉ số";
+const COL_VALUE = "Giá trị";
 
 interface FileUploadProps {
-  onUploadSuccess: () => void;
+  onUploaded: (data: KpiDataset) => void;
+  onClose?: () => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseExcelDate(val: unknown, XLSX: any): { date: string; hour: number } {
-  if (typeof val === "number") {
-    try {
-      const info = XLSX.SSF.parse_date_code(val);
-      if (info) {
-        const month = String(info.m).padStart(2, "0");
-        const day = String(info.d).padStart(2, "0");
-        return { date: `${info.y}-${month}-${day}`, hour: info.H || 0 };
-      }
-    } catch { /* fallthrough */ }
+function parseNumber(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const cleaned = v.trim().replace(/[^0-9.\-]/g, "");
+    if (!cleaned) return null;
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
   }
-  if (typeof val === "string" && val.trim()) {
-    const d = new Date(val);
-    if (!isNaN(d.getTime())) {
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return { date: `${d.getFullYear()}-${month}-${day}`, hour: d.getHours() };
-    }
-  }
-  return { date: "", hour: 0 };
+  return null;
 }
 
-export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
+function normMonth(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  // Accept "M/YYYY" or "MM/YYYY".
+  const m = s.match(/^(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[1].padStart(2, "0")}/${m[2]}`;
+}
+
+export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{ sent: number; total: number; phase: string } | null>(null);
-  const abortRef = useRef(false);
 
   const processFile = useCallback(
     async (file: File) => {
       if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
-        setError("Please upload an Excel (.xlsx, .xls) or CSV file.");
+        setError("Vui lòng chọn file Excel (.xlsx, .xls) hoặc CSV.");
         return;
       }
-      setIsUploading(true);
+      setIsBusy(true);
       setError(null);
-      setProgress({ sent: 0, total: 0, phase: "Đang đọc file..." });
-      abortRef.current = false;
+      const mb = (file.size / 1048576).toFixed(1);
+      setStatus(`Đang đọc file ${mb} MB...`);
+
+      // Yield to the browser so the spinner/text paints before heavy parsing.
+      await new Promise((r) => setTimeout(r, 30));
 
       try {
         const XLSX = await import("xlsx");
+        setStatus(`Đang xử lý ${mb} MB...`);
         const buffer = await file.arrayBuffer();
-
-        setProgress({ sent: 0, total: 0, phase: "Đang phân tích dữ liệu..." });
         const workbook = XLSX.read(buffer, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
@@ -88,90 +67,71 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
 
         if (rawRows.length === 0) {
           setError("File không có dữ liệu.");
+          setIsBusy(false);
           return;
         }
 
-        // Build case-insensitive column map
+        // Case-insensitive header mapping.
         const fileKeys = Object.keys(rawRows[0]);
-        const colMap: Record<string, string> = {};
-        for (const [field, aliases] of Object.entries(COL_ALIASES)) {
-          const match = fileKeys.find((k) =>
-            aliases.includes(k.trim().toLowerCase())
+        const findKey = (target: string) =>
+          fileKeys.find((k) => k.trim().toLowerCase() === target.trim().toLowerCase());
+        const kPartner = findKey(COL_PARTNER);
+        const kMonth = findKey(COL_MONTH);
+        const kMetric = findKey(COL_METRIC);
+        const kValue = findKey(COL_VALUE);
+
+        if (!kPartner || !kMonth || !kMetric || !kValue) {
+          setError(
+            `File thiếu cột. Cần: ${COL_PARTNER}, ${COL_MONTH}, ${COL_METRIC}, ${COL_VALUE}.`
           );
-          if (match) colMap[field] = match;
-        }
-
-        // Pre-process all rows
-        setProgress({ sent: 0, total: rawRows.length, phase: "Đang xử lý rows..." });
-
-        const processed: ImportRow[] = rawRows.map((raw) => {
-          const timeVal = colMap.create_time ? raw[colMap.create_time] : undefined;
-          const { date, hour } = parseExcelDate(timeVal, XLSX);
-          return {
-            order_id: String(colMap.order_id ? (raw[colMap.order_id] ?? "") : ""),
-            status: String(colMap.status ? (raw[colMap.status] ?? "") : ""),
-            depot: String(colMap.depot ? (raw[colMap.depot] ?? "") : ""),
-            total_pay: parseFloat(String(colMap.total_pay ? (raw[colMap.total_pay] ?? "0") : "0")) || 0,
-            pickup_city: String(colMap.pickup_city ? (raw[colMap.pickup_city] ?? "") : ""),
-            create_date: date,
-            create_hour: hour,
-            sap_profile_id: String(colMap.sap_profile_id ? (raw[colMap.sap_profile_id] ?? "") : ""),
-            distance: String(colMap.distance ? (raw[colMap.distance] ?? "") : ""),
-            cancel_by: String(colMap.cancel_by ? (raw[colMap.cancel_by] ?? "") : ""),
-          };
-        });
-
-        // ---- Aggregate on the client so we upload only summary rows (vài trăm dòng),
-        //      thay vì 180k dòng raw -> giảm mạnh Vercel Fast Origin Transfer. ----
-        setProgress({ sent: 0, total: 0, phase: "Đang tải bảng tài xế..." });
-        let driverMap: Record<string, string> = {};
-        try {
-          const dmRes = await fetch("/api/drivers/map");
-          if (dmRes.ok) driverMap = (await dmRes.json()).map ?? {};
-        } catch {
-          // Không lấy được map -> doi để trống (giống tài xế chưa khai báo)
-        }
-
-        setProgress({ sent: 0, total: 0, phase: "Đang tổng hợp dữ liệu..." });
-        const agg = aggregate(processed, driverMap);
-
-        if (agg.dates.length === 0) {
-          setError("Không có dòng hợp lệ sau khi lọc (kiểm tra cột Status / Depot).");
+          setIsBusy(false);
           return;
         }
 
-        setProgress({ sent: 0, total: agg.rawCount, phase: "Đang upload lên server..." });
-        const res = await fetch("/api/import-summary", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ordersSummary: agg.ordersSummary,
-            teamHourly: agg.teamHourly,
-            depotHourly: agg.depotHourly,
-            dates: agg.dates,
-            rawCount: agg.rawCount,
-          }),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `HTTP ${res.status}`);
+        const rows: KpiRow[] = [];
+        const monthSet = new Set<string>();
+        const partnerSet = new Set<string>();
+
+        for (const raw of rawRows) {
+          const partnerId = String(raw[kPartner] ?? "").trim();
+          const month = normMonth(raw[kMonth]);
+          const metric = String(raw[kMetric] ?? "").trim();
+          const value = parseNumber(raw[kValue]);
+          if (!partnerId || !month || !metric || value === null) continue;
+          rows.push({ partnerId, month, metric, value });
+          monthSet.add(month);
+          partnerSet.add(partnerId);
         }
 
-        if (!abortRef.current) {
-          const totalRows = agg.rawCount;
-          setProgress({ sent: totalRows, total: totalRows, phase: "Hoàn thành!" });
-          await new Promise((r) => setTimeout(r, 700));
-          onUploadSuccess();
+        console.log(`Giữ lại ${rows.length}/${rawRows.length} rows sau khi lọc`);
+
+        if (rows.length === 0) {
+          setError("Không có dòng hợp lệ nào sau khi lọc. Kiểm tra lại định dạng file.");
+          setIsBusy(false);
+          return;
         }
-      } catch (err: unknown) {
-        console.error("Upload error:", err);
-        setError(err instanceof Error ? err.message : "Lỗi không xác định khi upload.");
-      } finally {
-        setIsUploading(false);
-        if (!abortRef.current) setProgress(null);
+
+        const dataset: KpiDataset = {
+          rows,
+          months: sortMonths(Array.from(monthSet)),
+          partnerIds: Array.from(partnerSet),
+          fileName: file.name,
+          uploadedAt: new Date().toISOString(),
+          rowCount: rows.length,
+        };
+
+        setStatus("Đang lưu vào trình duyệt...");
+        await saveData(dataset);
+
+        setStatus("");
+        onUploaded(dataset);
+      } catch (err) {
+        console.error("Parse error:", err);
+        setError("Không thể đọc file. Vui lòng kiểm tra lại định dạng.");
+        setIsBusy(false);
       }
     },
-    [onUploadSuccess]
+    [onUploaded]
   );
 
   const handleDrop = useCallback(
@@ -184,80 +144,73 @@ export default function FileUpload({ onUploadSuccess }: FileUploadProps) {
     [processFile]
   );
 
-  const pct = progress && progress.total > 0
-    ? Math.round((progress.sent / progress.total) * 100)
-    : null;
-
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6">
-      <div className="text-center">
-        <h2 className="text-3xl font-bold text-white mb-2">Upload dữ liệu</h2>
-        <p className="text-slate-400">
-          Import file Excel (.xlsx/.xls) — dữ liệu lưu trên server, nhiều người dùng cùng xem
-        </p>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">Import dữ liệu KPI</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            File dạng: partner_id · Tháng · Chỉ số · Giá trị
+          </p>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 text-2xl leading-none px-2"
+            aria-label="Đóng"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       <div
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer
-          ${isDragging
-            ? "border-blue-400 bg-blue-500/10"
-            : "border-slate-600 hover:border-slate-400 bg-slate-800/50 hover:bg-slate-800"
-          }`}
-        onClick={() => !isUploading && document.getElementById("file-input")?.click()}
+        onClick={() => !isBusy && document.getElementById("kpi-file-input")?.click()}
+        className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer
+          ${
+            isDragging
+              ? "border-emerald-400 bg-emerald-50"
+              : "border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100"
+          } ${isBusy ? "pointer-events-none opacity-80" : ""}`}
       >
         <input
-          id="file-input"
+          id="kpi-file-input"
           type="file"
           accept=".xlsx,.xls,.csv"
           className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) processFile(f);
+            e.target.value = "";
+          }}
         />
 
-        {isUploading && progress ? (
-          <div className="flex flex-col items-center gap-4 w-full">
-            <div className="w-10 h-10 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            <p className="text-slate-300 font-medium">{progress.phase}</p>
-
-            {progress.total > 0 && (
-              <>
-                <div className="w-full bg-slate-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-400 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <p className="text-slate-400 text-sm">
-                  {progress.sent.toLocaleString()} / {progress.total.toLocaleString()} rows
-                  {pct !== null && ` (${pct}%)`}
-                </p>
-              </>
-            )}
+        {isBusy ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-9 h-9 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-gray-600 text-sm">{status || "Đang xử lý..."}</p>
           </div>
         ) : (
-          <>
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700 flex items-center justify-center">
-              <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-2xl">
+              📊
             </div>
-            <p className="text-white font-medium mb-1">Thả file vào đây</p>
-            <p className="text-slate-400 text-sm">hoặc click để chọn file</p>
-            <p className="text-slate-500 text-xs mt-3">Hỗ trợ .xlsx, .xls — tối đa 150MB</p>
-          </>
+            <p className="text-gray-700 font-medium">Thả file vào đây hoặc bấm để chọn</p>
+            <p className="text-gray-400 text-xs">Hỗ trợ .xlsx, .xls, .csv (10–100MB)</p>
+          </div>
         )}
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm max-w-lg w-full">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {error}
+        <div className="flex items-start gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
+          <span>⚠️</span>
+          <span>{error}</span>
         </div>
       )}
     </div>
