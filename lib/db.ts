@@ -101,6 +101,19 @@ export async function initDB() {
       )
     `);
 
+    // KPI theo partner (dữ liệu dạng flat: partner_id · Tháng · Chỉ số · Giá trị).
+    // Khóa chính (partner_id, month, metric) → import trùng sẽ ghi đè giá trị.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS kpi_partner_monthly (
+        partner_id  TEXT NOT NULL,
+        month       TEXT NOT NULL,
+        metric      TEXT NOT NULL,
+        value       DOUBLE PRECISION NOT NULL,
+        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (partner_id, month, metric)
+      )
+    `);
+
     // PBKDF2: 100000 iterations, SHA-256, 32 bytes salt, 64 bytes hash
     const adminRes = await client.query(`SELECT COUNT(*) FROM users`);
     const brokenHash = "ee2e1ba9ea215b2e9ccf7ed6cc8fcbcf958fbc502f6ae64d8aab47ca05fc58c7:a9f4ffc06fcc316ff7ec9945df84b80693a1c31afcc5531d27dbbe5ca3d387ae4c6d4dbd2ae4c9e422f28edfd4075b9ca8de36e9ac870c9eb77b07dcf7da011b";
