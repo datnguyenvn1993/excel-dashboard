@@ -90,8 +90,11 @@ function buildDataset(
 }
 
 /** Tải toàn bộ dữ liệu KPI đã lưu trên server. */
-export async function fetchServerData(): Promise<KpiDataset | null> {
-  const res = await fetch("/api/kpi-data", { cache: "no-store" });
+export async function fetchServerData(partnerId?: string): Promise<KpiDataset | null> {
+  const url = partnerId
+    ? `/api/kpi-data?partner=${encodeURIComponent(partnerId)}`
+    : "/api/kpi-data";
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as {
     rows: CompactRow[];

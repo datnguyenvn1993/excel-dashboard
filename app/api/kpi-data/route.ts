@@ -8,14 +8,19 @@ type CompactRow = [string, string, string, number];
 const META_KEY = "kpi_last_import";
 const MAX_ROWS_PER_REQUEST = 10000;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   await initDB();
+  // ?partner=<id> → chỉ trả dữ liệu của một hãng (trang chi tiết).
+  const partner = req.nextUrl.searchParams.get("partner");
   const client = await db.connect();
   try {
     const [data, meta] = await Promise.all([
-      client.query(
-        `SELECT partner_id, month, metric, value FROM kpi_partner_monthly`
-      ),
+      partner
+        ? client.query(
+            `SELECT partner_id, month, metric, value FROM kpi_partner_monthly WHERE partner_id = $1`,
+            [partner]
+          )
+        : client.query(`SELECT partner_id, month, metric, value FROM kpi_partner_monthly`),
       client.query(`SELECT value FROM metadata WHERE key = $1`, [META_KEY]),
     ]);
     const rows: CompactRow[] = data.rows.map((r) => [
