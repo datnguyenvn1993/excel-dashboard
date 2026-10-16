@@ -8,6 +8,7 @@ import PivotTable, { PivotRow } from "@/components/PivotTable";
 import { formatImportTime, monthKey, monthLabel } from "@/lib/storage";
 import { usePartnerDirectory } from "@/lib/usePartnerDirectory";
 import AppNav from "@/components/AppNav";
+import RegionOverview from "@/components/RegionOverview";
 
 interface DashboardProps {
   dataset: KpiDataset | null;
@@ -168,7 +169,8 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
   );
 
   // Bảng theo Miền: gộp các hãng đang hiển thị (dùng chung bộ lọc).
-  const { mienRows, mienIndex } = useMemo(() => {
+  // Các hãng đang lọc, gom theo miền (thứ tự MIEN_ORDER).
+  const { byMien, miens } = useMemo(() => {
     const byMien = new Map<string, string[]>();
     for (const p of visiblePartners) {
       const k = p.mien || "Chưa rõ miền";
@@ -177,6 +179,17 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     }
     const order = [...(MIEN_ORDER as readonly string[]), "Chưa rõ miền"];
     const miens = Array.from(byMien.keys()).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return { byMien, miens };
+  }, [visiblePartners]);
+
+  // Chart tổng quan: cộng dồn một chỉ số của các hãng trong miền (mọi tháng, không phụ thuộc lọc chỉ số).
+  const sumByMien = useCallback(
+    (mien: string, metric: string, month: string) =>
+      aggregateMetric(metric, byMien.get(mien) ?? [], (id, mt) => index.get(id)?.get(mt)?.get(month)),
+    [byMien, index]
+  );
+
+  const { mienRows, mienIndex } = useMemo(() => {
     const mienIndex: Index = new Map();
     for (const mien of miens) {
       const ids = byMien.get(mien)!;
@@ -197,7 +210,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
       sub: `${byMien.get(m)!.length} hãng`,
     }));
     return { mienRows, mienIndex };
-  }, [visiblePartners, visibleMetrics, visibleMonths, index]);
+  }, [byMien, miens, visibleMetrics, visibleMonths, index]);
   const getMienValue = useCallback(
     (mien: string, metric: string, month: string) => mienIndex.get(mien)?.get(metric)?.get(month),
     [mienIndex]
@@ -425,6 +438,16 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
               </button>
             ))}
           </div>
+        )}
+
+        {/* ── Tổng quan theo Miền (1 tháng) ─────────────────────────────────── */}
+        {hasData && (
+          <RegionOverview
+            months={allMonths}
+            multiYear={multiYear}
+            miens={miens}
+            sumFor={sumByMien}
+          />
         )}
 
         {/* ── Pivot tables ──────────────────────────────────────────────────── */}
