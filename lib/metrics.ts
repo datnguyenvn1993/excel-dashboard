@@ -32,6 +32,8 @@ export const METRICS: MetricDef[] = [
   { name: "Tỉ lệ hoàn thành cuốc", format: "pct", higherIsBetter: true, agg: W_TRIPS },
   { name: "Tỉ lệ vận doanh trên tổng xe", format: "pct", higherIsBetter: true, agg: W_CARS },
   { name: "Số xe vận doanh TB mỗi ngày", format: "dec1", higherIsBetter: true, agg: "sum" },
+  // Số tài xế hoạt động trong tháng của hãng → cộng dồn khi gộp theo miền.
+  { name: "TX active", format: "int", higherIsBetter: true, agg: "sum" },
   { name: "Số giờ trực tuyến TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true, agg: W_CARS },
   { name: "Số giờ vận doanh TB mỗi TX mỗi ngày", format: "dec1", higherIsBetter: true, agg: W_CARS },
 ];
@@ -41,6 +43,16 @@ export const METRIC_ORDER: string[] = METRICS.map((m) => m.name);
 const METRIC_BY_NAME: Record<string, MetricDef> = Object.fromEntries(
   METRICS.map((m) => [m.name, m])
 );
+
+const METRIC_BY_LOWER: Record<string, string> = Object.fromEntries(
+  METRICS.map((m) => [m.name.toLowerCase(), m.name])
+);
+
+/** Chuẩn hóa tên chỉ số theo danh sách METRICS, không phân biệt hoa/thường ("TX Active" → "TX active"). */
+export function canonicalMetric(name: string): string {
+  const t = name.trim();
+  return METRIC_BY_LOWER[t.toLowerCase()] ?? t;
+}
 
 export function metricDef(name: string): MetricDef {
   return METRIC_BY_NAME[name] ?? { name, format: "dec1", higherIsBetter: true, agg: W_TRIPS };

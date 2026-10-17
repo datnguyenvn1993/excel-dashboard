@@ -140,16 +140,17 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     const lastMonth = visibleMonths[visibleMonths.length - 1];
     let revenue = 0;
     let trips = 0;
-    let cars = 0;
+    let txActive: number | undefined; // undefined = tháng này chưa có chỉ số TX active
     if (lastMonth) {
       for (const p of visiblePartners) {
         const byMetric = index.get(p.id);
         revenue += byMetric?.get("Doanh thu")?.get(lastMonth) ?? 0;
         trips += byMetric?.get("Tổng cuốc")?.get(lastMonth) ?? 0;
-        cars += byMetric?.get("Số xe vận doanh TB mỗi ngày")?.get(lastMonth) ?? 0;
+        const tx = byMetric?.get("TX active")?.get(lastMonth);
+        if (tx !== undefined) txActive = (txActive ?? 0) + tx;
       }
     }
-    return { lastMonth, revenue, trips, cars, partnerCount: visiblePartners.length };
+    return { lastMonth, revenue, trips, txActive, partnerCount: visiblePartners.length };
   }, [visiblePartners, visibleMonths, index]);
 
   // ── Rows + value getters for the two pivot tables ──────────────────────────
@@ -282,8 +283,8 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
               value: hasData ? formatValue(summary.trips, "int") : "--",
             },
             {
-              label: `Tổng số xe vận doanh TB/ngày ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
-              value: hasData ? formatValue(summary.cars, "int") : "--",
+              label: `Tổng TX active ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
+              value: hasData && summary.txActive !== undefined ? formatValue(summary.txActive, "int") : "--",
             },
           ].map((c) => (
             <div key={c.label} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">

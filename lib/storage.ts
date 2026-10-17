@@ -1,4 +1,5 @@
 import { KpiDataset, KpiRow } from "@/types/data";
+import { canonicalMetric } from "@/lib/metrics";
 
 // IndexedDB-backed storage for the (potentially large) parsed KPI dataset.
 // localStorage caps out around 5–10 MB; IndexedDB handles far more.
@@ -105,7 +106,7 @@ export async function fetchServerData(partnerId?: string): Promise<KpiDataset | 
   const rows: KpiRow[] = json.rows.map(([partnerId, month, metric, value]) => ({
     partnerId,
     month,
-    metric,
+    metric: canonicalMetric(metric),
     value,
   }));
   return buildDataset(rows, json.fileName, json.uploadedAt);

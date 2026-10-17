@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { KpiDataset, KpiRow } from "@/types/data";
 import { fetchServerData, saveData, uploadToServer } from "@/lib/storage";
+import { canonicalMetric } from "@/lib/metrics";
 
 // Target columns (case-insensitive match against the file's header row).
 const COL_PARTNER = "partner_id";
@@ -128,7 +129,7 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
         for (const raw of rawRows) {
           const partnerId = String(raw[kPartner] ?? "").trim();
           const month = normMonth(raw[kMonth]);
-          const metric = String(raw[kMetric] ?? "").trim();
+          const metric = canonicalMetric(String(raw[kMetric] ?? ""));
           const value = parseNumber(raw[kValue]);
           if (!partnerId || !month || !metric || value === null) continue;
           byKey.set(`${partnerId}\u0001${month}\u0001${metric}`, {
