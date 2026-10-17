@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { KpiDataset, KpiRow } from "@/types/data";
 import { fetchServerData, saveData, uploadToServer } from "@/lib/storage";
 import { canonicalMetric } from "@/lib/metrics";
+import { decodeCsv, normText } from "@/lib/text";
 
 // Target columns (case-insensitive match against the file's header row).
 const COL_PARTNER = "partner_id";
@@ -93,7 +94,11 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
         const XLSX = await import("xlsx");
         setStatus(`Đang xử lý ${mb} MB...`);
         const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: "array" });
+        // CSV: tự giải mã UTF-8 (SheetJS mặc định đọc CSV không BOM như Latin-1 → lỗi
+        // "ThÃ¡ng"). Excel (.xlsx/.xls) đã lưu Unicode nên đọc thẳng.
+        const workbook = /\.csv$/i.test(file.name)
+          ? XLSX.read(decodeCsv(buffer), { type: "string" })
+          : XLSX.read(buffer, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
           raw: true,
@@ -106,10 +111,10 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
           return;
         }
 
-        // Case-insensitive header mapping.
+        // Header mapping: không phân biệt hoa/thường, tự sửa header bị lỗi mã hóa.
         const fileKeys = Object.keys(rawRows[0]);
         const findKey = (target: string) =>
-          fileKeys.find((k) => k.trim().toLowerCase() === target.trim().toLowerCase());
+          fileKeys.find((k) => normText(k).toLowerCase() === normText(target).toLowerCase());
         const kPartner = findKey(COL_PARTNER);
         const kMonth = findKey(COL_MONTH);
         const kMetric = findKey(COL_METRIC);
@@ -129,7 +134,7 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
         for (const raw of rawRows) {
           const partnerId = String(raw[kPartner] ?? "").trim();
           const month = normMonth(raw[kMonth]);
-          const metric = canonicalMetric(String(raw[kMetric] ?? ""));
+          const metric = canonicalMetric(normText(String(raw[kMetric] ?? "")));
           const value = parseNumber(raw[kValue]);
           if (!partnerId || !month || !metric || value === null) continue;
           byKey.set(`${partnerId}\u0001${month}\u0001${metric}`, {
