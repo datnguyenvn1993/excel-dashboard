@@ -7,20 +7,25 @@ import { useEffect, useState } from "react";
 // "Danh mục partner" chỉ dành cho admin: tài khoản khác thấy nút nhưng bị disable.
 const TABS = [
   { href: "/", label: "📊 Báo cáo KPI", adminOnly: false },
+  { href: "/cameras", label: "🚦 Camera", adminOnly: false },
   { href: "/partners", label: "🗂 Danh mục partner", adminOnly: true },
 ] as const;
 
-export default function AppNav({ active }: { active: "/" | "/partners" }) {
+export function useIsAdmin(): boolean | null {
   const [role, setRole] = useState<string | null>(null);
-
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => setRole(j?.user?.role ?? ""))
       .catch(() => setRole(""));
   }, []);
+  return role === null ? null : role === "admin";
+}
 
-  const isAdmin = role === "admin";
+export default function AppNav({ active }: { active: "/" | "/cameras" | "/partners" }) {
+  const admin = useIsAdmin();
+  const isAdmin = admin === true;
+  const role = admin === null ? null : "";
   const base = "px-3 py-1.5 text-xs font-semibold rounded-lg";
 
   return (
