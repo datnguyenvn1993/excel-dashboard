@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AppNav, { useIsAdmin } from "@/components/AppNav";
 import { Camera, cameraImgUrl } from "@/lib/cameras";
+import { buildCollage } from "@/lib/cameraCollage";
 
 const REFRESH_MS = 10_000;
 
@@ -34,6 +35,8 @@ function CameraCard({
   cam,
   tick,
   isAdmin,
+  selected,
+  onToggle,
   onZoom,
   onEdit,
   onToast,
@@ -41,6 +44,8 @@ function CameraCard({
   cam: Camera;
   tick: number;
   isAdmin: boolean;
+  selected: boolean;
+  onToggle: () => void;
   onZoom: () => void;
   onEdit: () => void;
   onToast: (msg: string) => void;
@@ -50,8 +55,19 @@ function CameraCard({
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+    <div
+      className={`bg-white border rounded-xl shadow-sm overflow-hidden flex flex-col ${
+        selected ? "border-teal-500 ring-2 ring-teal-400" : "border-gray-200"
+      }`}
+    >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          title="Chọn để copy nhiều ảnh"
+          className="w-4 h-4 accent-teal-600 cursor-pointer"
+        />
         <span className="flex-1 text-sm font-semibold text-gray-800 truncate text-center" title={cam.name}>
           {cam.name}
         </span>
@@ -124,6 +140,8 @@ export default function CamerasPage() {
   const [edit, setEdit] = useState<EditState | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [collageBusy, setCollageBusy] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const showToast = useCallback((msg: string) => {
@@ -176,6 +194,67 @@ export default function CamerasPage() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+
+  // Bỏ chọn các cam đã bị xoá khỏi danh sách.
+  useEffect(() => {
+    setSelected((s) => {
+      const ids = new Set(cameras.map((c) => c.camId));
+      const n = new Set(Array.from(s).filter((id) => ids.has(id)));
+      return n.size === s.size ? s : n;
+    });
+  }, [cameras]);
+
+  const toggleSel = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const selectedCams = cameras.filter((c) => selected.has(c.camId));
+
+  // Copy nhiều cam = copy 1 ảnh ghép (clipboard chỉ giữ được 1 ảnh để dán vào Zalo/Telegram...).
+  const copySelected = async () => {
+    if (selectedCams.length === 0) return;
+    setCollageBusy(true);
+    const job = buildCollage(selectedCams);
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": job.then((r) => r.blob) }),
+      ]);
+      const { failed } = await job;
+      showToast(
+        failed.length
+          ? `✔ Đã copy ${selectedCams.length} ảnh (lỗi: ${failed.join(", ")}) — Ctrl+V để dán`
+          : `✔ Đã copy ${selectedCams.length} ảnh ghép — Ctrl+V để dán`
+      );
+    } catch {
+      showToast("✖ Trình duyệt không cho copy ảnh — dùng nút ⬇ Tải ảnh ghép");
+    } finally {
+      setCollageBusy(false);
+    }
+  };
+
+  const downloadSelected = async () => {
+    if (selectedCams.length === 0) return;
+    setCollageBusy(true);
+    try {
+      const { blob, failed } = await buildCollage(selectedCams);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+      a.href = url;
+      a.download = `camera-${stamp}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (failed.length) showToast(`⚠️ Không tải được: ${failed.join(", ")}`);
+    } catch {
+      showToast("✖ Không tạo được ảnh ghép");
+    } finally {
+      setCollageBusy(false);
+    }
+  };
 
   const save = async () => {
     if (!edit) return;
@@ -275,6 +354,41 @@ export default function CamerasPage() {
         ) : tick === 0 ? null : cameras.length === 0 ? (
           <p className="text-center text-gray-400 py-16">Chưa có camera nào.</p>
         ) : (
+          <>
+          <div className="sticky top-[64px] z-20 mb-4 flex items-center gap-2 flex-wrap bg-white border border-gray-200 rounded-xl shadow-sm px-3 py-2">
+            <span className="text-xs text-gray-600">
+              Đã chọn <b>{selectedCams.length}</b>/{cameras.length} camera
+            </span>
+            <button
+              onClick={() => setSelected(new Set(cameras.map((c) => c.camId)))}
+              className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Chọn tất cả
+            </button>
+            <button
+              disabled={selectedCams.length === 0}
+              onClick={() => setSelected(new Set())}
+              className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Bỏ chọn
+            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                disabled={selectedCams.length === 0 || collageBusy}
+                onClick={copySelected}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-40"
+              >
+                {collageBusy ? "Đang ghép ảnh..." : `📸 Copy ${selectedCams.length || ""} ảnh đã chọn`}
+              </button>
+              <button
+                disabled={selectedCams.length === 0 || collageBusy}
+                onClick={downloadSelected}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                ⬇ Tải ảnh ghép
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {cameras.map((c) => (
               <CameraCard
@@ -282,16 +396,19 @@ export default function CamerasPage() {
                 cam={c}
                 tick={tick}
                 isAdmin={isAdmin}
+                selected={selected.has(c.camId)}
+                onToggle={() => toggleSel(c.camId)}
                 onZoom={() => setZoom(c)}
                 onEdit={() => setEdit({ oldCamId: c.camId, name: c.name, camId: c.camId })}
                 onToast={showToast}
               />
             ))}
           </div>
+          </>
         )}
         <p className="text-[11px] text-gray-400 mt-4 text-center">
-          Nguồn ảnh: giaothong.hochiminhcity.gov.vn · Bấm vào ảnh để phóng to · 📸 Copy rồi Ctrl+V để dán
-          gửi đi
+          Nguồn ảnh: giaothong.hochiminhcity.gov.vn · Bấm vào ảnh để phóng to · Tick chọn nhiều cam rồi
+          bấm 📸 Copy để copy 1 ảnh ghép, Ctrl+V để dán gửi đi
         </p>
       </main>
 
