@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { formatValue } from "@/lib/metrics";
-import { monthLabel } from "@/lib/storage";
+import { PeriodKind, periodLabel, periodRange } from "@/lib/period";
 
 const C_REVENUE = "#2a78d6";
 const C_TRIPS = "#eb6834";
@@ -22,8 +22,9 @@ const INK_MUTED = "#6b7280";
 const GRID = "#e5e7eb";
 
 interface RegionOverviewProps {
-  months: string[]; // tăng dần theo thời gian
+  months: string[]; // các kỳ, tăng dần theo thời gian
   multiYear: boolean;
+  kind?: PeriodKind;
   miens: string[]; // thứ tự hiển thị
   // Tổng một chỉ số (cộng dồn) của các hãng đang lọc thuộc miền, trong tháng.
   sumFor: (mien: string, metric: string, month: string) => number | undefined;
@@ -60,7 +61,13 @@ function valueLabel(format: (v: unknown) => string, color: string, dy: number, h
   };
 }
 
-export default function RegionOverview({ months, multiYear, miens, sumFor }: RegionOverviewProps) {
+export default function RegionOverview({
+  months,
+  multiYear,
+  miens,
+  sumFor,
+  kind = "month",
+}: RegionOverviewProps) {
   const latest = months[months.length - 1] ?? "";
   const [month, setMonth] = useState(latest);
 
@@ -87,14 +94,17 @@ export default function RegionOverview({ months, multiYear, miens, sumFor }: Reg
       <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-gray-200">
         <div>
           <h2 className="text-sm font-bold text-gray-700">
-            Tổng quan theo Miền · {month ? monthLabel(month, multiYear) : "--"}
+            Tổng quan theo Miền · {month ? periodLabel(kind, month, multiYear) : "--"}
+            {month && kind === "week" && (
+              <span className="ml-1 font-normal text-gray-400">({periodRange(kind, month)})</span>
+            )}
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
             Cột: Doanh thu ({fmtRevenue(totalRevenue)}) · Đường: Tổng cuốc ({fmtTrips(totalTrips)})
           </p>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-gray-500">
-          Tháng
+          {kind === "week" ? "Tuần" : "Tháng"}
           <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
@@ -105,7 +115,7 @@ export default function RegionOverview({ months, multiYear, miens, sumFor }: Reg
               .reverse()
               .map((m) => (
                 <option key={m} value={m}>
-                  {monthLabel(m, multiYear)} ({m}){m === latest ? " · mới nhất" : ""}
+                  {periodLabel(kind, m, multiYear)} ({periodRange(kind, m)}){m === latest ? " · mới nhất" : ""}
                 </option>
               ))}
           </select>

@@ -5,12 +5,21 @@ import { KpiDataset } from "@/types/data";
 import { MIEN_ORDER, partnerName, partnerMien } from "@/lib/partners";
 import { METRIC_ORDER, formatValue, aggregateMetric } from "@/lib/metrics";
 import PivotTable, { PivotRow } from "@/components/PivotTable";
-import { formatImportTime, monthKey, monthLabel } from "@/lib/storage";
+import { formatImportTime } from "@/lib/storage";
+import {
+  PERIOD_UNIT,
+  PeriodKind,
+  periodLabel,
+  periodRange,
+  periodSortValue,
+  periodsMultiYear,
+} from "@/lib/period";
 import { usePartnerDirectory } from "@/lib/usePartnerDirectory";
 import AppNav from "@/components/AppNav";
 import RegionOverview from "@/components/RegionOverview";
 
 interface DashboardProps {
+  kind?: PeriodKind; // "month" (mặc định) hoặc "week"
   dataset: KpiDataset | null;
   onImportNew: () => void;
 }
@@ -28,7 +37,8 @@ const PLACEHOLDER_MONTHS = [
   "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12",
 ].map((m) => `${m}/2026`);
 
-export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
+export default function Dashboard({ kind = "month", dataset, onImportNew }: DashboardProps) {
+  const unit = PERIOD_UNIT[kind];
   const hasData = !!dataset && dataset.rows.length > 0;
   // Tên/miền nhập thêm ở trang Danh mục partner (DB) — version đổi thì tính lại.
   const { version: dirVersion } = usePartnerDirectory();
@@ -65,10 +75,9 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
       Array.from(metricSet).filter((m) => !METRIC_ORDER.includes(m))
     );
     const allMonths = (dataset?.months ?? []).slice();
-    const years = new Set(allMonths.map((m) => m.split("/")[1]));
-    return { index, partners, metricsPresent, allMonths, multiYear: years.size > 1 };
+    return { index, partners, metricsPresent, allMonths, multiYear: periodsMultiYear(kind, allMonths) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataset, dirVersion]);
+  }, [dataset, dirVersion, kind]);
 
   // ── Filter state ──────────────────────────────────────────────────────────
   const [selMiens, setSelMiens] = useState<Set<string>>(new Set());
@@ -102,10 +111,11 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
   // ── Derived visible sets ───────────────────────────────────────────────────
   const visibleMonths = useMemo(() => {
     if (!startMonth || !endMonth) return allMonths;
-    const lo = Math.min(monthKey(startMonth), monthKey(endMonth));
-    const hi = Math.max(monthKey(startMonth), monthKey(endMonth));
-    return allMonths.filter((m) => monthKey(m) >= lo && monthKey(m) <= hi);
-  }, [allMonths, startMonth, endMonth]);
+    const key = (m: string) => periodSortValue(kind, m);
+    const lo = Math.min(key(startMonth), key(endMonth));
+    const hi = Math.max(key(startMonth), key(endMonth));
+    return allMonths.filter((m) => key(m) >= lo && key(m) <= hi);
+  }, [allMonths, startMonth, endMonth, kind]);
 
   // Thứ tự hiển thị cột: tháng gần nhất bên trái.
   const displayMonths = useMemo(() => visibleMonths.slice().reverse(), [visibleMonths]);
@@ -160,9 +170,9 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
         key: p.id,
         label: p.name,
         sub: p.mien,
-        href: `/partner/${encodeURIComponent(p.id)}`,
+        href: `/partner/${encodeURIComponent(p.id)}${kind === "week" ? "?kind=week" : ""}`,
       })),
-    [visiblePartners]
+    [visiblePartners, kind]
   );
   const getPartnerValue = useCallback(
     (id: string, metric: string, month: string) => index.get(id)?.get(metric)?.get(month),
@@ -217,6 +227,12 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
     [mienIndex]
   );
 
+  // Nhãn kỳ cuối cho các thẻ tổng: "T10" / "W42 (13/10 - 19/10/2026)".
+  const lastLabel = summary.lastMonth
+    ? periodLabel(kind, summary.lastMonth, false) +
+      (kind === "week" ? ` (${periodRange(kind, summary.lastMonth)})` : "")
+    : `${unit} cuối`;
+
   const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
     const n = new Set(set);
     if (n.has(key)) n.delete(key);
@@ -225,7 +241,11 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
   };
 
   // Columns for display (fallback to placeholder when empty).
-  const monthCols = hasData ? displayMonths : PLACEHOLDER_MONTHS.slice().reverse();
+  const monthCols = hasData
+    ? displayMonths
+    : kind === "week"
+      ? []
+      : PLACEHOLDER_MONTHS.slice().reverse();
   const monthColsMultiYear = hasData ? multiYear : false;
 
   const selectCls =
@@ -241,11 +261,11 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <h1 className="text-sm sm:text-base font-bold uppercase tracking-wide text-white">
-              📊 Báo cáo KPI theo Partner
+              {kind === "week" ? "📅 KPI tuần theo Partner" : "📊 KPI tháng theo Partner"}
             </h1>
             <p className="text-xs text-cyan-50 mt-0.5">
               {hasData
-                ? `${summary.partnerCount} hãng · ${visibleMonths.length} tháng${
+                ? `${summary.partnerCount} hãng · ${visibleMonths.length} ${unit}${
                     dataset ? ` · ${dataset.fileName}` : ""
                   }`
                 : "Chưa có dữ liệu — bấm Import file để bắt đầu"}
@@ -257,7 +277,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <AppNav active="/" />
+            <AppNav active={kind === "week" ? "/weekly" : "/"} />
             <button
               onClick={onImportNew}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-teal-700 hover:bg-cyan-50 shadow-sm"
@@ -273,17 +293,17 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {[
             { label: "Số hãng", value: hasData ? String(summary.partnerCount) : "--" },
-            { label: "Số tháng", value: hasData ? String(visibleMonths.length) : "--" },
+            { label: `Số ${unit}`, value: hasData ? String(visibleMonths.length) : "--" },
             {
-              label: `Doanh thu ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
+              label: `Doanh thu ${lastLabel}`,
               value: hasData ? formatValue(summary.revenue, "vnd") : "--",
             },
             {
-              label: `Tổng cuốc ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
+              label: `Tổng cuốc ${lastLabel}`,
               value: hasData ? formatValue(summary.trips, "int") : "--",
             },
             {
-              label: `Tổng TX active ${summary.lastMonth ? "T" + parseInt(summary.lastMonth) : "tháng cuối"}`,
+              label: `Tổng TX active ${lastLabel}`,
               value: hasData && summary.txActive !== undefined ? formatValue(summary.txActive, "int") : "--",
             },
           ].map((c) => (
@@ -386,7 +406,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
             >
               {allMonths.map((m) => (
                 <option key={m} value={m}>
-                  {monthLabel(m, multiYear)} ({m})
+                  {periodLabel(kind, m, multiYear)} ({periodRange(kind, m)})
                 </option>
               ))}
             </select>
@@ -399,7 +419,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
             >
               {allMonths.map((m) => (
                 <option key={m} value={m}>
-                  {monthLabel(m, multiYear)} ({m})
+                  {periodLabel(kind, m, multiYear)} ({periodRange(kind, m)})
                 </option>
               ))}
             </select>
@@ -444,6 +464,7 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
         {/* ── Tổng quan theo Miền (1 tháng) ─────────────────────────────────── */}
         {hasData && (
           <RegionOverview
+            kind={kind}
             months={allMonths}
             multiYear={multiYear}
             miens={miens}
@@ -458,11 +479,12 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
           subHeader="Số hãng"
           rows={mienRows}
           metrics={hasData ? visibleMetrics : METRIC_ORDER}
+          kind={kind}
           months={monthCols}
           multiYear={monthColsMultiYear}
           getValue={getMienValue}
           placeholder={!hasData}
-          csvFileName="bao-cao-kpi-theo-mien.csv"
+          csvFileName={`kpi-${kind === "week" ? "tuan" : "thang"}-theo-mien.csv`}
         />
         <PivotTable
           title="Theo hãng (bấm tên hãng để xem phân tích chi tiết)"
@@ -470,11 +492,12 @@ export default function Dashboard({ dataset, onImportNew }: DashboardProps) {
           subHeader="Miền"
           rows={partnerRows}
           metrics={hasData ? visibleMetrics : METRIC_ORDER}
+          kind={kind}
           months={monthCols}
           multiYear={monthColsMultiYear}
           getValue={getPartnerValue}
           placeholder={!hasData}
-          csvFileName="bao-cao-kpi-theo-hang.csv"
+          csvFileName={`kpi-${kind === "week" ? "tuan" : "thang"}-theo-hang.csv`}
         />
 
         {!hasData && (

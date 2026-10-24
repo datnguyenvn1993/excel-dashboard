@@ -31,7 +31,9 @@ export async function GET() {
       client.query(
         `SELECT partner_id, name, mien, updated_at, updated_by FROM partner_directory ORDER BY partner_id`
       ),
-      client.query(`SELECT DISTINCT partner_id FROM kpi_partner_monthly`),
+      client.query(
+        `SELECT partner_id FROM kpi_partner_monthly UNION SELECT partner_id FROM kpi_partner_weekly`
+      ),
     ]);
     return NextResponse.json({
       entries: dir.rows.map((r) => ({

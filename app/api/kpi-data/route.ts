@@ -5,23 +5,34 @@ import { initDB, db } from "@/lib/db";
 // Row dạng gọn: [partnerId, month "MM/YYYY", metric, value].
 type CompactRow = [string, string, string, number];
 
-const META_KEY = "kpi_last_import";
 const MAX_ROWS_PER_REQUEST = 10000;
+
+// ?kind=week → bảng KPI tuần riêng; mặc định là KPI tháng.
+// Tên bảng/cột chỉ lấy từ danh sách cố định này (không ghép chuỗi từ input).
+const STORES = {
+  month: { table: "kpi_partner_monthly", col: "month", metaKey: "kpi_last_import" },
+  week: { table: "kpi_partner_weekly", col: "period", metaKey: "kpi_last_import_week" },
+} as const;
+
+function storeOf(req: NextRequest) {
+  return req.nextUrl.searchParams.get("kind") === "week" ? STORES.week : STORES.month;
+}
 
 export async function GET(req: NextRequest) {
   await initDB();
   // ?partner=<id> → chỉ trả dữ liệu của một hãng (trang chi tiết).
   const partner = req.nextUrl.searchParams.get("partner");
+  const { table, col, metaKey } = storeOf(req);
   const client = await db.connect();
   try {
     const [data, meta] = await Promise.all([
       partner
         ? client.query(
-            `SELECT partner_id, month, metric, value FROM kpi_partner_monthly WHERE partner_id = $1`,
+            `SELECT partner_id, ${col} AS month, metric, value FROM ${table} WHERE partner_id = $1`,
             [partner]
           )
-        : client.query(`SELECT partner_id, month, metric, value FROM kpi_partner_monthly`),
-      client.query(`SELECT value FROM metadata WHERE key = $1`, [META_KEY]),
+        : client.query(`SELECT partner_id, ${col} AS month, metric, value FROM ${table}`),
+      client.query(`SELECT value FROM metadata WHERE key = $1`, [metaKey]),
     ]);
     const rows: CompactRow[] = data.rows.map((r) => [
       r.partner_id,
@@ -77,6 +88,12 @@ export async function POST(req: NextRequest) {
     dedup.set(`${row[0]}\u0001${row[1]}\u0001${row[2]}`, row);
   }
   const rows = Array.from(dedup.values());
+  const { table, col, metaKey } = storeOf(req);
+  // Kỳ tuần phải đúng khóa "YYYY-MM-DD_YYYY-MM-DD"; kỳ tháng "MM/YYYY".
+  const periodRe = col === "period" ? /^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}$/ : /^\d{2}\/\d{4}$/;
+  if (rows.some((r) => !periodRe.test(r[1]))) {
+    return NextResponse.json({ error: "Kỳ báo cáo không đúng định dạng" }, { status: 400 });
+  }
 
   const client = await db.connect();
   try {
@@ -84,9 +101,9 @@ export async function POST(req: NextRequest) {
     let updated = 0;
     if (rows.length > 0) {
       const res = await client.query(
-        `INSERT INTO kpi_partner_monthly (partner_id, month, metric, value)
+        `INSERT INTO ${table} (partner_id, ${col}, metric, value)
          SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::float8[])
-         ON CONFLICT (partner_id, month, metric)
+         ON CONFLICT (partner_id, ${col}, metric)
          DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
          RETURNING (xmax = 0) AS inserted`,
         [
@@ -107,7 +124,7 @@ export async function POST(req: NextRequest) {
         `INSERT INTO metadata (key, value) VALUES ($1, $2)
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
         [
-          META_KEY,
+          metaKey,
           JSON.stringify({ fileName: body.fileName, uploadedAt: new Date().toISOString() }),
         ]
       );

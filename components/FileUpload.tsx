@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { KpiDataset, KpiRow } from "@/types/data";
 import { fetchServerData, saveData, uploadToServer } from "@/lib/storage";
+import { PeriodKind, parseWeekRange } from "@/lib/period";
 import { canonicalMetric } from "@/lib/metrics";
 import { decodeCsv, normText } from "@/lib/text";
 
@@ -15,6 +16,13 @@ const COL_VALUE = "Giá trị";
 interface FileUploadProps {
   onUploaded: (data: KpiDataset, result: { inserted: number; updated: number }) => void;
   onClose?: () => void;
+  kind?: PeriodKind; // "week": file KPI tuần, lưu vào kho dữ liệu riêng
+}
+
+// Tên cột kỳ được chấp nhận (file tuần có thể vẫn đặt tên cột là "Tháng").
+const PERIOD_COLS: Record<PeriodKind, string[]> = {
+  month: [COL_MONTH],
+  week: ["Tuần", "Week", "Kỳ", COL_MONTH],
 }
 
 function parseNumber(v: unknown): number | null {
@@ -70,7 +78,7 @@ function normMonth(v: unknown): string | null {
   return null;
 }
 
-export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
+export default function FileUpload({ onUploaded, onClose, kind = "month" }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
@@ -116,13 +124,13 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
         const findKey = (target: string) =>
           fileKeys.find((k) => normText(k).toLowerCase() === normText(target).toLowerCase());
         const kPartner = findKey(COL_PARTNER);
-        const kMonth = findKey(COL_MONTH);
+        const kMonth = PERIOD_COLS[kind].map(findKey).find(Boolean);
         const kMetric = findKey(COL_METRIC);
         const kValue = findKey(COL_VALUE);
 
         if (!kPartner || !kMonth || !kMetric || !kValue) {
           setError(
-            `File thiếu cột. Cần: ${COL_PARTNER}, ${COL_MONTH}, ${COL_METRIC}, ${COL_VALUE}.`
+            `File thiếu cột. Cần: ${COL_PARTNER}, ${kind === "week" ? "Tuần (hoặc Tháng)" : COL_MONTH}, ${COL_METRIC}, ${COL_VALUE}.`
           );
           setIsBusy(false);
           return;
@@ -133,7 +141,7 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
 
         for (const raw of rawRows) {
           const partnerId = String(raw[kPartner] ?? "").trim();
-          const month = normMonth(raw[kMonth]);
+          const month = kind === "week" ? parseWeekRange(raw[kMonth]) : normMonth(raw[kMonth]);
           const metric = canonicalMetric(normText(String(raw[kMetric] ?? "")));
           const value = parseNumber(raw[kValue]);
           if (!partnerId || !month || !metric || value === null) continue;
@@ -149,7 +157,11 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
         console.log(`Giữ lại ${rows.length}/${rawRows.length} rows sau khi lọc`);
 
         if (rows.length === 0) {
-          setError("Không có dòng hợp lệ nào sau khi lọc. Kiểm tra lại định dạng file.");
+          setError(
+            kind === "week"
+              ? 'Không có dòng hợp lệ. Cột tuần cần dạng "05/01 - 11/01/2026" hoặc "29/12 - 04/01/2026".'
+              : "Không có dòng hợp lệ nào sau khi lọc. Kiểm tra lại định dạng file."
+          );
           setIsBusy(false);
           return;
         }
@@ -157,8 +169,11 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
         setStatus(`Đang lưu lên server 0/${rows.length} dòng...`);
         let result: { inserted: number; updated: number };
         try {
-          result = await uploadToServer(rows, file.name, (done, total) =>
-            setStatus(`Đang lưu lên server ${done}/${total} dòng...`)
+          result = await uploadToServer(
+            rows,
+            file.name,
+            (done, total) => setStatus(`Đang lưu lên server ${done}/${total} dòng...`),
+            kind
           );
         } catch (e) {
           console.error("Upload error:", e);
@@ -172,13 +187,13 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
 
         // Tải lại toàn bộ dữ liệu đã gộp trên server (gồm cả các tháng/partner cũ).
         setStatus("Đang tải lại dữ liệu...");
-        const dataset = await fetchServerData();
+        const dataset = await fetchServerData(undefined, kind);
         if (!dataset) {
           setError("Không đọc lại được dữ liệu từ server.");
           setIsBusy(false);
           return;
         }
-        await saveData(dataset).catch(() => {});
+        await saveData(dataset, kind).catch(() => {});
 
         setStatus("");
         setIsBusy(false);
@@ -206,9 +221,13 @@ export default function FileUpload({ onUploaded, onClose }: FileUploadProps) {
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-800">Import dữ liệu KPI</h2>
+          <h2 className="text-lg font-bold text-gray-800">
+            Import dữ liệu KPI {kind === "week" ? "tuần" : "tháng"}
+          </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            File dạng: partner_id · Tháng · Chỉ số · Giá trị
+            {kind === "week"
+              ? "File dạng: partner_id · Tuần (vd. 05/01 - 11/01/2026) · Chỉ số · Giá trị"
+              : "File dạng: partner_id · Tháng · Chỉ số · Giá trị"}
           </p>
         </div>
         {onClose && (

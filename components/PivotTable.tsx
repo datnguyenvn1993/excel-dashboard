@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { metricDef, formatValue, growthPct } from "@/lib/metrics";
-import { monthLabel } from "@/lib/storage";
+import { PeriodKind, periodLabel, periodRange, periodTitle } from "@/lib/period";
 
 export interface PivotRow {
   key: string;
@@ -17,8 +17,9 @@ interface PivotTableProps {
   subHeader: string;
   rows: PivotRow[];
   metrics: string[];
-  months: string[]; // thứ tự hiển thị (mới nhất bên trái)
+  months: string[]; // các kỳ theo thứ tự hiển thị (mới nhất bên trái)
   multiYear: boolean;
+  kind?: PeriodKind; // mặc định "month"
   getValue: (rowKey: string, metric: string, month: string) => number | undefined;
   placeholder?: boolean; // chưa có dữ liệu → hiển thị khung trống
   sortable?: boolean; // mặc định true
@@ -59,6 +60,7 @@ export default function PivotTable({
   metrics,
   months,
   multiYear,
+  kind = "month",
   getValue,
   placeholder,
   sortable = true,
@@ -115,7 +117,15 @@ export default function PivotTable({
   // Giá trị là số thô để Excel tính toán được; chỉ số dạng % được nhân 100.
   const exportCsv = () => {
     const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-    const header = [labelHeader, subHeader, "Chỉ số", ...months.map((m) => monthLabel(m, multiYear))];
+    // CSV tuần ghi cả khoảng ngày để người nhận biết dữ liệu từ ngày nào đến ngày nào.
+    const header = [
+      labelHeader,
+      subHeader,
+      "Chỉ số",
+      ...months.map((m) =>
+        kind === "week" ? `${periodLabel(kind, m, multiYear)} (${periodRange(kind, m)})` : periodLabel(kind, m, multiYear)
+      ),
+    ];
     const lines = [header.map(esc).join(",")];
     for (const r of sortedRows) {
       for (const metric of metrics) {
@@ -150,7 +160,7 @@ export default function PivotTable({
         <div className="flex items-center gap-3 flex-wrap">
         {canSort && metrics.length > 1 && (
           <label className="flex items-center gap-1.5 text-xs text-gray-500">
-            Sắp xếp cột tháng theo
+            Sắp xếp cột {kind === "week" ? "tuần" : "tháng"} theo
             <select
               value={sortMetric}
               onChange={(e) => setSortMetric(e.target.value)}
@@ -193,12 +203,17 @@ export default function PivotTable({
                   <th
                     key={m}
                     onClick={() => canSort && clickHeader({ col: "month", month: m })}
-                    title={!canSort ? undefined : `Sắp xếp theo ${sortMetric} ${m}`}
+                    title={`${periodTitle(kind, m)}${canSort ? ` · bấm để sắp xếp theo ${sortMetric}` : ""}`}
                     className={`${th} min-w-[96px] ${canSort ? "cursor-pointer select-none hover:bg-gray-200" : ""} ${
                       active ? "text-teal-700" : ""
                     }`}
                   >
-                    {monthLabel(m, multiYear)}
+                    {periodLabel(kind, m, multiYear)}
+                    {kind === "week" && (
+                      <div className="text-[9px] font-normal text-gray-400 leading-tight">
+                        {periodRange(kind, m)}
+                      </div>
+                    )}
                     {canSort && arrow(active)}
                   </th>
                 );

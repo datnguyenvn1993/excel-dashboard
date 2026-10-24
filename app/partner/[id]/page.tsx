@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   Bar,
   BarChart,
@@ -16,7 +16,15 @@ import {
   YAxis,
 } from "recharts";
 import { KpiDataset } from "@/types/data";
-import { fetchServerData, monthLabel } from "@/lib/storage";
+import { fetchServerData } from "@/lib/storage";
+import {
+  PERIOD_UNIT,
+  PeriodKind,
+  periodLabel,
+  periodRange,
+  periodTitle,
+  periodsMultiYear,
+} from "@/lib/period";
 import { partnerMien, partnerName } from "@/lib/partners";
 import { usePartnerDirectory } from "@/lib/usePartnerDirectory";
 import { METRIC_ORDER, formatValue, growthPct, metricDef } from "@/lib/metrics";
@@ -38,7 +46,7 @@ const KEY_METRICS = [
   "Số xe vận doanh TB mỗi ngày",
 ];
 
-type Point = { month: string; label: string } & Record<string, number | string | undefined>;
+type Point = { month: string; label: string; title: string } & Record<string, number | string | undefined>;
 
 function fmt(metric: string) {
   const f = metricDef(metric).format;
@@ -96,7 +104,7 @@ function SingleBar({ data, metric }: { data: Point[]; metric: string }) {
           cursor={{ fill: "rgba(0,0,0,0.04)" }}
           itemStyle={{ color: "#111827" }}
           formatter={(v) => [f(v), metric]}
-          labelFormatter={(_, p) => (p?.[0]?.payload as Point | undefined)?.month ?? ""}
+          labelFormatter={(_, p) => (p?.[0]?.payload as Point | undefined)?.title ?? ""}
         />
         <Bar
           dataKey={metric}
@@ -137,7 +145,7 @@ function Lines({
         <Tooltip
           itemStyle={{ color: "#111827" }}
           formatter={(v, name) => [fmt(String(name))(v), String(name)]}
-          labelFormatter={(_, p) => (p?.[0]?.payload as Point | undefined)?.month ?? ""}
+          labelFormatter={(_, p) => (p?.[0]?.payload as Point | undefined)?.title ?? ""}
         />
         {series.length > 1 && (
           <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: INK_MUTED }} />
@@ -164,6 +172,8 @@ function Lines({
 
 export default function PartnerDetailPage() {
   const params = useParams<{ id: string }>();
+  // ?kind=week → phân tích theo KPI tuần (dữ liệu riêng với KPI tháng).
+  const kind: PeriodKind = useSearchParams().get("kind") === "week" ? "week" : "month";
   const partnerId = decodeURIComponent(params.id);
   const [dataset, setDataset] = useState<KpiDataset | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,14 +181,14 @@ export default function PartnerDetailPage() {
 
   useEffect(() => {
     let alive = true;
-    fetchServerData(partnerId)
+    fetchServerData(partnerId, kind)
       .then((d) => alive && setDataset(d))
       .catch(() => alive && setError("Không tải được dữ liệu từ server."))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [partnerId]);
+  }, [partnerId, kind]);
 
   // Áp tên/miền nhập ở trang Danh mục partner; dirVersion đổi → render lại với tên mới.
   const { version: dirVersion } = usePartnerDirectory();
@@ -197,21 +207,20 @@ export default function PartnerDetailPage() {
       byMetric.get(r.metric)!.set(r.month, r.value);
     }
     const months = dataset?.months ?? [];
-    const years = new Set(months.map((m) => m.split("/")[1]));
     const metrics = METRIC_ORDER.filter((m) => byMetric.has(m)).concat(
       Array.from(byMetric.keys()).filter((m) => !METRIC_ORDER.includes(m))
     );
-    return { byMetric, months, multiYear: years.size > 1, metrics };
-  }, [dataset]);
+    return { byMetric, months, multiYear: periodsMultiYear(kind, months), metrics };
+  }, [dataset, kind]);
 
   const data: Point[] = useMemo(
     () =>
       months.map((m) => {
-        const p: Point = { month: m, label: monthLabel(m, multiYear) };
+        const p: Point = { month: m, label: periodLabel(kind, m, multiYear), title: periodTitle(kind, m) };
         for (const k of KEY_METRICS) p[k] = byMetric.get(k)?.get(m);
         return p;
       }),
-    [months, multiYear, byMetric]
+    [months, multiYear, byMetric, kind]
   );
 
   const getValue = useCallback(
@@ -239,7 +248,9 @@ export default function PartnerDetailPage() {
         <h1 className="text-sm sm:text-base font-bold text-white">📈 {name}</h1>
         <p className="text-xs text-cyan-50 mt-0.5">
           {mien || "Chưa rõ miền"}
-          {months.length > 0 && ` · ${months[0]} – ${last}`}
+          {kind === "week" ? " · KPI tuần" : " · KPI tháng"}
+          {months.length > 0 &&
+            ` · ${periodRange(kind, months[0]).split(" - ")[0]} – ${periodRange(kind, last).split(" - ").pop()}`}
         </p>
       </header>
 
@@ -265,8 +276,11 @@ export default function PartnerDetailPage() {
                 const good = g !== null && g > 0 === def.higherIsBetter;
                 return (
                   <div key={k} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate">
-                      {k} · {monthLabel(last, multiYear)}
+                    <div
+                      title={periodTitle(kind, last)}
+                      className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate"
+                    >
+                      {k} · {periodLabel(kind, last, multiYear)}
                     </div>
                     <div className="text-lg font-bold text-gray-800 mt-1">
                       {formatValue(v, def.format)}
@@ -279,7 +293,7 @@ export default function PartnerDetailPage() {
                           <span className={good ? "text-emerald-600" : "text-red-500"}>
                             {g > 0 ? "▲" : "▼"} {Math.abs(g).toFixed(1)}%
                           </span>{" "}
-                          so với tháng trước
+                          so với {PERIOD_UNIT[kind]} trước
                         </>
                       )}
                     </div>
@@ -291,10 +305,10 @@ export default function PartnerDetailPage() {
             <section className="space-y-3">
               <h2 className="text-sm font-bold text-gray-700">1. Quy mô kinh doanh</h2>
               <div className="grid lg:grid-cols-2 gap-4">
-                <ChartCard title="Doanh thu" subtitle="Theo tháng">
+                <ChartCard title="Doanh thu" subtitle={`Theo ${PERIOD_UNIT[kind]}`}>
                   <SingleBar data={data} metric="Doanh thu" />
                 </ChartCard>
-                <ChartCard title="Tổng cuốc" subtitle="Theo tháng — thường đi cùng chiều doanh thu">
+                <ChartCard title="Tổng cuốc" subtitle={`Theo ${PERIOD_UNIT[kind]} — thường đi cùng chiều doanh thu`}>
                   <SingleBar data={data} metric="Tổng cuốc" />
                 </ChartCard>
               </div>
@@ -329,6 +343,7 @@ export default function PartnerDetailPage() {
             </section>
 
             <PivotTable
+              kind={kind}
               title="Bảng số liệu đầy đủ"
               labelHeader="Tên hãng"
               subHeader="Miền"

@@ -114,6 +114,18 @@ export async function initDB() {
       )
     `);
 
+    // KPI theo partner theo TUẦN (tách riêng khỏi KPI tháng). period = "YYYY-MM-DD_YYYY-MM-DD".
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS kpi_partner_weekly (
+        partner_id  TEXT NOT NULL,
+        period      TEXT NOT NULL,
+        metric      TEXT NOT NULL,
+        value       DOUBLE PRECISION NOT NULL,
+        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (partner_id, period, metric)
+      )
+    `);
+
     // Danh mục partner do người dùng nhập thêm/sửa (ghi đè danh sách mặc định trong lib/partners.ts).
     await client.query(`
       CREATE TABLE IF NOT EXISTS partner_directory (

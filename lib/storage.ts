@@ -1,5 +1,6 @@
 import { KpiDataset, KpiRow } from "@/types/data";
 import { canonicalMetric } from "@/lib/metrics";
+import { PeriodKind, sortPeriods } from "@/lib/period";
 
 // IndexedDB-backed storage for the (potentially large) parsed KPI dataset.
 // localStorage caps out around 5–10 MB; IndexedDB handles far more.
@@ -8,6 +9,8 @@ const DB_NAME = "excel-dashboard";
 const DB_VERSION = 1;
 const STORE_NAME = "datasets";
 const DATA_KEY = "current-kpi";
+// Mỗi loại kỳ có bản cache riêng trong trình duyệt.
+const dataKey = (kind: PeriodKind) => (kind === "week" ? "current-kpi-week" : DATA_KEY);
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -22,12 +25,12 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveData(data: KpiDataset): Promise<void> {
+export async function saveData(data: KpiDataset, kind: PeriodKind = "month"): Promise<void> {
   const db = await openDB();
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(data, DATA_KEY);
+      tx.objectStore(STORE_NAME).put(data, dataKey(kind));
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -36,12 +39,12 @@ export async function saveData(data: KpiDataset): Promise<void> {
   }
 }
 
-export async function loadData(): Promise<KpiDataset | null> {
+export async function loadData(kind: PeriodKind = "month"): Promise<KpiDataset | null> {
   const db = await openDB();
   try {
     return await new Promise<KpiDataset | null>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readonly");
-      const req = tx.objectStore(STORE_NAME).get(DATA_KEY);
+      const req = tx.objectStore(STORE_NAME).get(dataKey(kind));
       req.onsuccess = () => resolve((req.result as KpiDataset) ?? null);
       req.onerror = () => reject(req.error);
     });
@@ -50,12 +53,12 @@ export async function loadData(): Promise<KpiDataset | null> {
   }
 }
 
-export async function clearData(): Promise<void> {
+export async function clearData(kind: PeriodKind = "month"): Promise<void> {
   const db = await openDB();
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).delete(DATA_KEY);
+      tx.objectStore(STORE_NAME).delete(dataKey(kind));
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -72,7 +75,8 @@ const UPLOAD_CHUNK = 5000;
 function buildDataset(
   rows: KpiRow[],
   fileName: string,
-  uploadedAt: string
+  uploadedAt: string,
+  kind: PeriodKind
 ): KpiDataset {
   const monthSet = new Set<string>();
   const partnerSet = new Set<string>();
@@ -82,7 +86,7 @@ function buildDataset(
   }
   return {
     rows,
-    months: sortMonths(Array.from(monthSet)),
+    months: sortPeriods(kind, Array.from(monthSet)),
     partnerIds: Array.from(partnerSet),
     fileName,
     uploadedAt,
@@ -91,10 +95,15 @@ function buildDataset(
 }
 
 /** Tải toàn bộ dữ liệu KPI đã lưu trên server. */
-export async function fetchServerData(partnerId?: string): Promise<KpiDataset | null> {
-  const url = partnerId
-    ? `/api/kpi-data?partner=${encodeURIComponent(partnerId)}`
-    : "/api/kpi-data";
+export async function fetchServerData(
+  partnerId?: string,
+  kind: PeriodKind = "month"
+): Promise<KpiDataset | null> {
+  const qs = new URLSearchParams();
+  if (partnerId) qs.set("partner", partnerId);
+  if (kind === "week") qs.set("kind", "week");
+  const q = qs.toString();
+  const url = `/api/kpi-data${q ? `?${q}` : ""}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as {
@@ -109,7 +118,7 @@ export async function fetchServerData(partnerId?: string): Promise<KpiDataset | 
     metric: canonicalMetric(metric),
     value,
   }));
-  return buildDataset(rows, json.fileName, json.uploadedAt);
+  return buildDataset(rows, json.fileName, json.uploadedAt, kind);
 }
 
 /**
@@ -119,14 +128,15 @@ export async function fetchServerData(partnerId?: string): Promise<KpiDataset | 
 export async function uploadToServer(
   rows: KpiRow[],
   fileName: string,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  kind: PeriodKind = "month"
 ): Promise<{ inserted: number; updated: number }> {
   let inserted = 0;
   let updated = 0;
   for (let i = 0; i < rows.length; i += UPLOAD_CHUNK) {
     const chunk = rows.slice(i, i + UPLOAD_CHUNK);
     const isLast = i + UPLOAD_CHUNK >= rows.length;
-    const res = await fetch("/api/kpi-data", {
+    const res = await fetch(kind === "week" ? "/api/kpi-data?kind=week" : "/api/kpi-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

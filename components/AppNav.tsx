@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 // Thanh chuyển trang dùng chung trên header.
 // "Danh mục partner" chỉ dành cho admin: tài khoản khác thấy nút nhưng bị disable.
 const TABS = [
-  { href: "/", label: "📊 Báo cáo KPI", adminOnly: false },
+  { href: "/", label: "📊 KPI tháng", adminOnly: false },
+  { href: "/weekly", label: "📅 KPI tuần", adminOnly: false },
   { href: "/cameras", label: "🚦 Camera", adminOnly: false },
   { href: "/partners", label: "🗂 Danh mục partner", adminOnly: true },
 ] as const;
@@ -22,7 +23,7 @@ export function useIsAdmin(): boolean | null {
   return role === null ? null : role === "admin";
 }
 
-export default function AppNav({ active }: { active: "/" | "/cameras" | "/partners" }) {
+export default function AppNav({ active }: { active: "/" | "/weekly" | "/cameras" | "/partners" }) {
   const admin = useIsAdmin();
   const isAdmin = admin === true;
   const role = admin === null ? null : "";
