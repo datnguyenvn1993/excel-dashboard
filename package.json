@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@kenjiuno/msgreader": "1.28.0",
     "@vercel/blob": "^0.27.0",
     "@vercel/postgres": "^0.10.0",
     "jose": "^6.2.3",

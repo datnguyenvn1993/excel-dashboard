@@ -148,6 +148,42 @@ export async function initDB() {
       )
     `);
 
+    // Quản lý mail khiếu nại: mỗi thread (thread::...::) là một sự vụ.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mail_cases (
+        thread_id      TEXT PRIMARY KEY,
+        subject        TEXT NOT NULL DEFAULT '',
+        order_codes    TEXT[] NOT NULL DEFAULT '{}',
+        partner_email  TEXT NOT NULL DEFAULT '',
+        partner_name   TEXT,
+        messages       JSONB NOT NULL DEFAULT '[]',
+        created_at     TIMESTAMPTZ,
+        category       TEXT,
+        status         TEXT NOT NULL DEFAULT 'Chưa xử lý',
+        complainant    TEXT,
+        partner_verify TEXT,
+        completed_at   TIMESTAMPTZ,
+        result         TEXT,
+        note           TEXT,
+        sf_case        TEXT,
+        pic            TEXT,
+        file_name      TEXT,
+        imported_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ DEFAULT NOW(),
+        updated_by     TEXT
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_mail_cases_created ON mail_cases(created_at)`);
+    // Danh bạ: email (hoặc "@domain") người nhận → tên đối tác.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mail_partner_contacts (
+        email        TEXT PRIMARY KEY,
+        partner_name TEXT NOT NULL,
+        updated_at   TIMESTAMPTZ DEFAULT NOW(),
+        updated_by   TEXT
+      )
+    `);
+
     // PBKDF2: 100000 iterations, SHA-256, 32 bytes salt, 64 bytes hash
     const adminRes = await client.query(`SELECT COUNT(*) FROM users`);
     const brokenHash = "ee2e1ba9ea215b2e9ccf7ed6cc8fcbcf958fbc502f6ae64d8aab47ca05fc58c7:a9f4ffc06fcc316ff7ec9945df84b80693a1c31afcc5531d27dbbe5ca3d387ae4c6d4dbd2ae4c9e422f28edfd4075b9ca8de36e9ac870c9eb77b07dcf7da011b";
