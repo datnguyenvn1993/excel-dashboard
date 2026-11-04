@@ -167,16 +167,24 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const user = await getSession(req);
-  if (!user || user.role !== "admin") {
-    return NextResponse.json({ error: "Chỉ admin được xóa sự vụ" }, { status: 403 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await initDB();
-  const id = req.nextUrl.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "Thiếu id" }, { status: 400 });
+  // Xóa nhiều sự vụ: ?id=<một thread>, hoặc body { ids: [...] }.
+  const ids = new Set<string>();
+  const one = req.nextUrl.searchParams.get("id");
+  if (one) ids.add(one);
+  try {
+    const body = await req.json();
+    if (Array.isArray(body?.ids)) for (const x of body.ids) if (typeof x === "string" && x) ids.add(x);
+  } catch {
+    // không có body JSON — bỏ qua
+  }
+  const list = Array.from(ids).slice(0, 500);
+  if (list.length === 0) return NextResponse.json({ error: "Thiếu id" }, { status: 400 });
   const client = await db.connect();
   try {
-    await client.query(`DELETE FROM mail_cases WHERE thread_id = $1`, [id]);
-    return NextResponse.json({ success: true });
+    const res = await client.query(`DELETE FROM mail_cases WHERE thread_id = ANY($1::text[])`, [list]);
+    return NextResponse.json({ success: true, deleted: res.rowCount ?? 0 });
   } finally {
     client.release();
   }

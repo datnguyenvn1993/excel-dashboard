@@ -178,6 +178,7 @@ export default function MailsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showReplies, setShowReplies] = useState<Set<string>>(new Set());
   const [showContacts, setShowContacts] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [popup, setPopup] = useState<{ kind: PickerKind; c: MailCase } | null>(null);
@@ -294,6 +295,23 @@ export default function MailsPage() {
     }
     setBusy(null);
     setReport(lines);
+    await load();
+  };
+
+  // ── Xóa các sự vụ đã chọn ────────────────────────────────────────────────
+  const deleteSelected = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const res = await fetch("/api/mail-cases", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    setSelected(new Set());
+    setShowDelete(false);
+    showToast(`🗑️ Đã xóa ${json.deleted ?? ids.length} sự vụ`);
     await load();
   };
 
@@ -535,6 +553,14 @@ export default function MailsPage() {
               className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
             >
               ⬇ Xuất CSV{selected.size ? ` (${selected.size} đã chọn)` : ""}
+            </button>
+            <button
+              disabled={selected.size === 0}
+              title={selected.size ? "Xóa các sự vụ đã chọn" : "Tick chọn sự vụ trước"}
+              onClick={() => setShowDelete(true)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40"
+            >
+              🗑 Xóa đã chọn{selected.size ? ` (${selected.size})` : ""}
             </button>
           </div>
         </div>
@@ -809,6 +835,15 @@ export default function MailsPage() {
             await saveField(popup.c.threadId, popup.kind, v);
             setPopup(null);
           }}
+        />
+      )}
+
+      {showDelete && (
+        <DeleteModal
+          count={selected.size}
+          samples={cases.filter((c) => selected.has(c.threadId)).slice(0, 5).map((c) => c.subject || c.threadId)}
+          onClose={() => setShowDelete(false)}
+          onConfirm={deleteSelected}
         />
       )}
 
@@ -1099,6 +1134,85 @@ function PickerModal({
               Xóa
             </button>
           )}
+          <button
+            onClick={onClose}
+            className="ml-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Hủy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Xác nhận xóa: phải gõ đúng chữ "delete" mới bật nút Xóa. */
+function DeleteModal({
+  count,
+  samples,
+  onClose,
+  onConfirm,
+}: {
+  count: number;
+  samples: string[];
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const ok = text.trim().toLowerCase() === "delete";
+
+  const run = async () => {
+    if (!ok) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onConfirm();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Xóa thất bại");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[55] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-base font-bold text-red-600">🗑 Xóa {count} sự vụ đã chọn</h2>
+        <p className="text-xs text-gray-600">
+          Thao tác này <b>không thể hoàn tác</b>. Dữ liệu các sự vụ (gồm cả các cột đã nhập tay) sẽ bị xóa khỏi
+          server. Có thể import lại từ file .msg sau.
+        </p>
+        <ul className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-28 overflow-auto list-disc pl-5">
+          {samples.map((s, i) => (
+            <li key={i} className="truncate">
+              {s}
+            </li>
+          ))}
+          {count > samples.length && <li>… và {count - samples.length} sự vụ khác</li>}
+        </ul>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">
+            Gõ <b className="font-mono text-red-600">delete</b> để xác nhận
+          </label>
+          <input
+            value={text}
+            autoFocus
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && ok && run()}
+            placeholder="delete"
+            className="w-full text-sm px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:border-red-500 font-mono"
+          />
+        </div>
+        {err && <div className="text-xs text-red-600">⚠️ {err}</div>}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            disabled={!ok || busy}
+            onClick={run}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-semibold disabled:opacity-40"
+          >
+            {busy ? "Đang xóa..." : `Xóa ${count} sự vụ`}
+          </button>
           <button
             onClick={onClose}
             className="ml-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
