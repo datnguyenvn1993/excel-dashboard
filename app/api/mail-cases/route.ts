@@ -31,6 +31,7 @@ function rowToCase(r: Record<string, unknown>): MailCase {
     partnerVerify: (r.partner_verify as string) ?? null,
     completedAt,
     result: (r.result as string) ?? null,
+    penalty: (r.penalty as string) ?? null,
     note: (r.note as string) ?? null,
     sfCase: (r.sf_case as string) ?? null,
     pic: (r.pic as string) ?? null,

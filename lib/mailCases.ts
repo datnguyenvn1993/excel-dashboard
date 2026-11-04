@@ -11,7 +11,24 @@ export const CATEGORIES = [
 ];
 export const STATUSES = ["Chưa xử lý", "Đang xử lý", "Đã xử lý"];
 export const COMPLAINANTS = ["KH", "TX", "Partner", "Khác"];
-export const RESULTS = ["Vi phạm", "Không vi phạm", "Khác"];
+export const RESULTS = [
+  "QTUX nhóm 1",
+  "QTUX nhóm 2",
+  "QTUX nhóm 3",
+  "QTUX nhóm 4",
+  "Nhắc nhở lần 1",
+  "Các quy định khác",
+  "Nhắc nhở & TĐT",
+  "Xác Minh Không phải lỗi TX/Chưa đủ căn cứ đánh giá, xác minh vi phạm",
+  "Đã hỗ trợ TX",
+  "Không vi phạm",
+  "Khác",
+];
+// Hình thức xử lý vi phạm (cột mới).
+export const PENALTIES = ["Phạt đối tác", "Không phạt đối tác"];
+
+/** Kết quả mang tính vi phạm → tô đỏ. */
+export const isViolationResult = (r: string | null) => !!r && /^(QTUX|Nhắc nhở|Vi phạm)/.test(r);
 
 export interface MailCase {
   threadId: string;
@@ -28,6 +45,7 @@ export interface MailCase {
   partnerVerify: string | null;
   completedAt: string | null;
   result: string | null;
+  penalty: string | null; // Hình thức XLVP
   note: string | null;
   sfCase: string | null;
   pic: string | null;
@@ -45,6 +63,7 @@ export const EDITABLE_FIELDS = {
   partnerVerify: "partner_verify",
   completedAt: "completed_at",
   result: "result",
+  penalty: "penalty",
   note: "note",
   sfCase: "sf_case",
   pic: "pic",

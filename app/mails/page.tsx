@@ -8,13 +8,16 @@ import {
   COMPLAINANTS,
   EditableField,
   MailCase,
+  PENALTIES,
   RESULTS,
+  isViolationResult,
   STATUSES,
   deriveStatus,
   durationText,
   lookupPartner,
 } from "@/lib/mailCases";
 import { PARTNERS } from "@/lib/partners";
+import { exportMailTemplate } from "@/lib/mailExport";
 
 interface Contact {
   email: string;
@@ -177,7 +180,7 @@ export default function MailsPage() {
   const [showContacts, setShowContacts] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [popup, setPopup] = useState<{ kind: "completedAt" | "result"; c: MailCase } | null>(null);
+  const [popup, setPopup] = useState<{ kind: PickerKind; c: MailCase } | null>(null);
   // Đồng hồ cho cột "Thời gian HT" của sự vụ chưa xong — cập nhật mỗi 5 phút.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -351,7 +354,7 @@ export default function MailsPage() {
     const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
     const header = [
       "Thread ID", "Ngày tạo", "Subject", "Mã đơn", "Đối tác", "Email đối tác", "Phân loại", "Người khiếu nại",
-      "Trạng thái", "PIC", "Partner xác minh", "Ngày hoàn thành", "Thời gian hoàn thành", "Kết quả",
+      "Trạng thái", "PIC", "Partner xác minh", "Ngày hoàn thành", "Thời gian hoàn thành", "Kết quả", "Hình thức XLVP",
       "Case SF", "Note", "Số mail trong thread",
     ];
     const lines = [header.join(",")];
@@ -361,7 +364,7 @@ export default function MailsPage() {
         [
           c.threadId, fmtDateTime(c.createdAt), c.subject, c.orderCodes.join(" "), partnerOf(c), c.partnerEmail,
           c.category ?? "", c.complainant ?? "", c.status, c.pic ?? "", c.partnerVerify ?? "",
-          fmtDateTime(c.completedAt), durationText(c.createdAt, c.completedAt ?? now), c.result ?? "", c.sfCase ?? "",
+          fmtDateTime(c.completedAt), durationText(c.createdAt, c.completedAt ?? now), c.result ?? "", c.penalty ?? "", c.sfCase ?? "",
           c.note ?? "", String(c.messages.length),
         ]
           .map((v) => esc(String(v)))
@@ -380,7 +383,7 @@ export default function MailsPage() {
   const filterCls =
     "text-xs px-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:border-emerald-500";
   const th = "px-2 py-2 font-semibold border-b border-gray-200 text-center whitespace-nowrap";
-  const COLS = 16;
+  const COLS = 17;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -512,6 +515,21 @@ export default function MailsPage() {
               📇 Email → Đối tác ({contacts.length})
             </button>
             <button
+              disabled={selected.size === 0}
+              title={selected.size ? "Xuất các sự vụ đã chọn theo mẫu báo cáo (A → W)" : "Tick chọn sự vụ trước"}
+              onClick={() =>
+                exportMailTemplate(
+                  cases.filter((c) => selected.has(c.threadId)),
+                  cases,
+                  partnerOf,
+                  (u) => (u ? users.find((x) => x.username === u)?.displayName || u : "")
+                ).catch(() => showToast("✖ Không xuất được file Excel"))
+              }
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              📗 Xuất Excel mẫu{selected.size ? ` (${selected.size})` : ""}
+            </button>
+            <button
               disabled={visible.length === 0}
               onClick={exportCsv}
               className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
@@ -560,6 +578,7 @@ export default function MailsPage() {
                   <th className={th}>Ngày hoàn thành</th>
                   <th className={th}>Thời gian HT</th>
                   <th className={`${th} min-w-[120px]`}>Kết quả</th>
+                  <th className={`${th} min-w-[110px]`}>Hình thức XLVP</th>
                   <th className={`${th} min-w-[110px]`}>Case SF</th>
                   <th className={`${th} min-w-[180px]`}>Note</th>
                   <th className={th}>Mail</th>
@@ -700,14 +719,30 @@ export default function MailsPage() {
                             <button
                               onClick={() => setPopup({ kind: "result", c })}
                               className={`w-full whitespace-nowrap px-2 py-1 rounded-md border text-[11px] ${
-                                c.result === "Vi phạm"
+                                isViolationResult(c.result)
                                   ? "border-red-200 bg-red-50 text-red-700 font-semibold"
                                   : c.result
                                     ? "border-gray-300 bg-gray-50 text-gray-700 font-semibold"
                                     : "border-dashed border-gray-300 text-gray-400 hover:bg-gray-50"
                               }`}
                             >
-                              {c.result ?? "+ Chọn kết quả"}
+                              <span className="block max-w-[180px] truncate" title={c.result ?? undefined}>
+                                {c.result ?? "+ Chọn kết quả"}
+                              </span>
+                            </button>
+                          </td>
+                          <td className="px-2 py-2">
+                            <button
+                              onClick={() => setPopup({ kind: "penalty", c })}
+                              className={`w-full whitespace-nowrap px-2 py-1 rounded-md border text-[11px] ${
+                                c.penalty === "Phạt đối tác"
+                                  ? "border-red-200 bg-red-50 text-red-700 font-semibold"
+                                  : c.penalty
+                                    ? "border-gray-300 bg-gray-50 text-gray-700 font-semibold"
+                                    : "border-dashed border-gray-300 text-gray-400 hover:bg-gray-50"
+                              }`}
+                            >
+                              {c.penalty ?? "+ Chọn"}
                             </button>
                           </td>
                           <td className="px-2 py-2">
@@ -963,22 +998,29 @@ function ContactsModal({
 }
 
 /** Popup chọn Ngày hoàn thành / Kết quả: OK mới lưu, "Xóa" để đưa sự vụ về chưa hoàn thành / chưa có kết quả. */
+type PickerKind = "completedAt" | "result" | "penalty";
+
+const PICKER: Record<Exclude<PickerKind, "completedAt">, { title: string; options: string[] }> = {
+  result: { title: "⚖️ Kết quả xử lý", options: RESULTS },
+  penalty: { title: "💸 Hình thức xử lý vi phạm", options: PENALTIES },
+};
+
 function PickerModal({
   kind,
   c,
   onClose,
   onSave,
 }: {
-  kind: "completedAt" | "result";
+  kind: PickerKind;
   c: MailCase;
   onClose: () => void;
   onSave: (v: string | null) => Promise<void>;
 }) {
   const [date, setDate] = useState(() => toLocalInput(c.completedAt ?? new Date().toISOString()));
-  const [result, setResult] = useState<string>(c.result ?? "");
+  const [result, setResult] = useState<string>((kind === "penalty" ? c.penalty : c.result) ?? "");
   const [busy, setBusy] = useState(false);
   const isDate = kind === "completedAt";
-  const current = isDate ? c.completedAt : c.result;
+  const current = isDate ? c.completedAt : kind === "penalty" ? c.penalty : c.result;
 
   const run = async (v: string | null) => {
     setBusy(true);
@@ -994,10 +1036,10 @@ function PickerModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
         <div>
           <h2 className="text-base font-bold text-gray-800">
-            {isDate ? "🗓 Ngày hoàn thành" : "⚖️ Kết quả xử lý"}
+            {isDate ? "🗓 Ngày hoàn thành" : PICKER[kind].title}
           </h2>
           <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{c.subject}</p>
         </div>
@@ -1025,8 +1067,8 @@ function PickerModal({
             )}
           </div>
         ) : (
-          <div className="space-y-1.5">
-            {RESULTS.map((r) => (
+          <div className="space-y-1.5 max-h-[55vh] overflow-auto">
+            {(current && !PICKER[kind].options.includes(current) ? [current, ...PICKER[kind].options] : PICKER[kind].options).map((r) => (
               <label
                 key={r}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${
@@ -1051,7 +1093,7 @@ function PickerModal({
             <button
               disabled={busy}
               onClick={() => run(null)}
-              title={isDate ? "Xóa ngày hoàn thành — sự vụ quay về chưa hoàn thành" : "Xóa kết quả"}
+              title={isDate ? "Xóa ngày hoàn thành — sự vụ quay về chưa hoàn thành" : "Xóa lựa chọn"}
               className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm"
             >
               Xóa
