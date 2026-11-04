@@ -22,7 +22,8 @@ export interface MailCase {
   messages: MailMessage[];
   createdAt: string | null;
   category: string | null;
-  status: string;
+  status: string; // tự tính: xem deriveStatus
+  importCount: number;
   complainant: string | null;
   partnerVerify: string | null;
   completedAt: string | null;
@@ -40,7 +41,6 @@ export interface MailCase {
 export const EDITABLE_FIELDS = {
   partnerName: "partner_name",
   category: "category",
-  status: "status",
   complainant: "complainant",
   partnerVerify: "partner_verify",
   completedAt: "completed_at",
@@ -61,14 +61,28 @@ export function lookupPartner(email: string, contacts: Record<string, string>): 
   return at >= 0 ? contacts[e.slice(at)] ?? "" : "";
 }
 
-/** "2 ngày 5 giờ" giữa lúc tạo và lúc hoàn thành. */
-export function durationText(from: string | null, to: string | null): string {
-  if (!from || !to) return "";
+/**
+ * Trạng thái tự động:
+ * - có ngày hoàn thành → Đã xử lý
+ * - thread có phản hồi, hoặc đã import trùng (gộp) → Đang xử lý
+ * - chỉ có mail đầu tiên → Chưa xử lý
+ */
+export function deriveStatus(c: { completedAt: string | null; messageCount: number; importCount: number }): string {
+  if (c.completedAt) return "Đã xử lý";
+  if (c.messageCount > 1 || c.importCount > 1) return "Đang xử lý";
+  return "Chưa xử lý";
+}
+
+/** "2 ngày 5 giờ 12 phút" giữa hai mốc (mốc cuối mặc định là bây giờ). */
+export function durationText(from: string | null, to: string | number | null): string {
+  if (!from || to === null) return "";
   const ms = new Date(to).getTime() - new Date(from).getTime();
   if (!Number.isFinite(ms)) return "";
   if (ms < 0) return "⚠️ trước ngày tạo";
-  const h = Math.round(ms / 3_600_000);
-  const d = Math.floor(h / 24);
-  const r = h % 24;
-  return d ? `${d} ngày${r ? ` ${r} giờ` : ""}` : `${h} giờ`;
+  const totalMin = Math.floor(ms / 60_000);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
+  const m = totalMin % 60;
+  const parts = [d && `${d} ngày`, h && `${h} giờ`, (!d || m) && `${m} phút`].filter(Boolean);
+  return parts.join(" ");
 }

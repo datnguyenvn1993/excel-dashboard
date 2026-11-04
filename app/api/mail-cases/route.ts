@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initDB, db } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import { EDITABLE_FIELDS, EditableField, MailCase } from "@/lib/mailCases";
+import { EDITABLE_FIELDS, EditableField, MailCase, deriveStatus } from "@/lib/mailCases";
 
 // GET: toàn bộ sự vụ mail.
 // POST { cases: ParsedMail[] }: import — trùng thread_id thì cập nhật phần lấy từ mail
@@ -13,19 +13,23 @@ const MAX_CASES = 50;
 
 function rowToCase(r: Record<string, unknown>): MailCase {
   const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
+  const messages = (r.messages as MailCase["messages"]) ?? [];
+  const importCount = Number(r.import_count ?? 1);
+  const completedAt = iso(r.completed_at);
   return {
     threadId: r.thread_id as string,
     subject: r.subject as string,
     orderCodes: (r.order_codes as string[]) ?? [],
     partnerEmail: r.partner_email as string,
     partnerName: (r.partner_name as string) ?? null,
-    messages: (r.messages as MailCase["messages"]) ?? [],
+    messages,
     createdAt: iso(r.created_at),
     category: (r.category as string) ?? null,
-    status: r.status as string,
+    status: deriveStatus({ completedAt, messageCount: messages.length, importCount }),
+    importCount,
     complainant: (r.complainant as string) ?? null,
     partnerVerify: (r.partner_verify as string) ?? null,
-    completedAt: iso(r.completed_at),
+    completedAt,
     result: (r.result as string) ?? null,
     note: (r.note as string) ?? null,
     sfCase: (r.sf_case as string) ?? null,
@@ -98,6 +102,7 @@ export async function POST(req: NextRequest) {
            messages = CASE WHEN jsonb_array_length(EXCLUDED.messages) >= jsonb_array_length(mail_cases.messages)
                            THEN EXCLUDED.messages ELSE mail_cases.messages END,
            created_at = COALESCE(LEAST(mail_cases.created_at, EXCLUDED.created_at), mail_cases.created_at, EXCLUDED.created_at),
+           import_count = mail_cases.import_count + 1,
            file_name = CASE WHEN jsonb_array_length(EXCLUDED.messages) >= jsonb_array_length(mail_cases.messages)
                             THEN EXCLUDED.file_name ELSE mail_cases.file_name END,
            imported_at = NOW()
@@ -144,7 +149,6 @@ export async function PATCH(req: NextRequest) {
   if ((field === "completedAt" || field === "createdAt") && value && Number.isNaN(Date.parse(value))) {
     return NextResponse.json({ error: "Ngày giờ không hợp lệ" }, { status: 400 });
   }
-  if (field === "status" && !value) value = "Chưa xử lý";
   if (value && value.length > 5000) value = value.slice(0, 5000);
 
   const client = await db.connect();

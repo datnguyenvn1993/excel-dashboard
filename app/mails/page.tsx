@@ -10,6 +10,7 @@ import {
   MailCase,
   RESULTS,
   STATUSES,
+  deriveStatus,
   durationText,
   lookupPartner,
 } from "@/lib/mailCases";
@@ -175,6 +176,15 @@ export default function MailsPage() {
   const [showReplies, setShowReplies] = useState<Set<string>>(new Set());
   const [showContacts, setShowContacts] = useState(false);
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [popup, setPopup] = useState<{ kind: "completedAt" | "result"; c: MailCase } | null>(null);
+  // Đồng hồ cho cột "Thời gian HT" của sự vụ chưa xong — cập nhật mỗi 5 phút.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [fCategory, setFCategory] = useState("");
@@ -195,6 +205,8 @@ export default function MailsPage() {
       ]);
       if (c.error) throw new Error(c.error);
       setCases(c.cases ?? []);
+      const ids = new Set<string>((c.cases ?? []).map((x: MailCase) => x.threadId));
+      setSelected((s) => new Set(Array.from(s).filter((id) => ids.has(id))));
       setContacts(ct.contacts ?? []);
       setUsers(u.users ?? []);
       setError(null);
@@ -285,7 +297,14 @@ export default function MailsPage() {
   // ── Sửa một ô ────────────────────────────────────────────────────────────
   const saveField = async (threadId: string, field: EditableField, value: string | null) => {
     const prev = cases;
-    setCases((cs) => cs.map((c) => (c.threadId === threadId ? { ...c, [field]: value || null } : c)));
+    setCases((cs) =>
+      cs.map((c) => {
+        if (c.threadId !== threadId) return c;
+        const n = { ...c, [field]: value || null };
+        n.status = deriveStatus({ completedAt: n.completedAt, messageCount: n.messages.length, importCount: n.importCount });
+        return n;
+      })
+    );
     try {
       const res = await fetch("/api/mail-cases", {
         method: "PATCH",
@@ -336,12 +355,13 @@ export default function MailsPage() {
       "Case SF", "Note", "Số mail trong thread",
     ];
     const lines = [header.join(",")];
-    for (const c of visible) {
+    const rows = selected.size ? cases.filter((c) => selected.has(c.threadId)) : visible;
+    for (const c of rows) {
       lines.push(
         [
           c.threadId, fmtDateTime(c.createdAt), c.subject, c.orderCodes.join(" "), partnerOf(c), c.partnerEmail,
           c.category ?? "", c.complainant ?? "", c.status, c.pic ?? "", c.partnerVerify ?? "",
-          fmtDateTime(c.completedAt), durationText(c.createdAt, c.completedAt), c.result ?? "", c.sfCase ?? "",
+          fmtDateTime(c.completedAt), durationText(c.createdAt, c.completedAt ?? now), c.result ?? "", c.sfCase ?? "",
           c.note ?? "", String(c.messages.length),
         ]
           .map((v) => esc(String(v)))
@@ -360,7 +380,7 @@ export default function MailsPage() {
   const filterCls =
     "text-xs px-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:border-emerald-500";
   const th = "px-2 py-2 font-semibold border-b border-gray-200 text-center whitespace-nowrap";
-  const COLS = 15;
+  const COLS = 16;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -472,7 +492,18 @@ export default function MailsPage() {
               </option>
             ))}
           </select>
-          <span className="text-xs text-gray-500">{visible.length} sự vụ</span>
+          <span className="text-xs text-gray-500">
+            {visible.length} sự vụ
+            {selected.size > 0 && (
+              <>
+                {" "}
+                · <b className="text-teal-700">{selected.size} đã chọn</b>{" "}
+                <button onClick={() => setSelected(new Set())} className="underline hover:text-gray-700">
+                  bỏ chọn
+                </button>
+              </>
+            )}
+          </span>
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={() => setShowContacts(true)}
@@ -485,7 +516,7 @@ export default function MailsPage() {
               onClick={exportCsv}
               className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
             >
-              ⬇ Xuất CSV
+              ⬇ Xuất CSV{selected.size ? ` (${selected.size} đã chọn)` : ""}
             </button>
           </div>
         </div>
@@ -502,6 +533,21 @@ export default function MailsPage() {
             <table className="text-xs border-collapse min-w-full">
               <thead className="sticky top-0 z-20 bg-gray-100 text-gray-600">
                 <tr>
+                  <th className={th}>
+                    <input
+                      type="checkbox"
+                      title="Chọn tất cả sự vụ đang hiển thị"
+                      checked={visible.length > 0 && visible.every((c) => selected.has(c.threadId))}
+                      onChange={(e) =>
+                        setSelected((s) => {
+                          const n = new Set(s);
+                          for (const c of visible) e.target.checked ? n.add(c.threadId) : n.delete(c.threadId);
+                          return n;
+                        })
+                      }
+                      className="w-4 h-4 accent-teal-600"
+                    />
+                  </th>
                   <th className={th}></th>
                   <th className={th}>Ngày tạo</th>
                   <th className={`${th} min-w-[260px]`}>Subject · Mã đơn</th>
@@ -540,7 +586,19 @@ export default function MailsPage() {
                     const save = (f: EditableField) => (v: string) => saveField(c.threadId, f, v);
                     return (
                       <Fragment key={c.threadId}>
-                        <tr className={`${i % 2 ? "bg-gray-50/50" : "bg-white"} border-t border-gray-100 align-top`}>
+                        <tr
+                          className={`${
+                            selected.has(c.threadId) ? "bg-teal-50/60" : i % 2 ? "bg-gray-50/50" : "bg-white"
+                          } border-t border-gray-100 align-top`}
+                        >
+                          <td className="px-2 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(c.threadId)}
+                              onChange={() => toggle(selected, setSelected, c.threadId)}
+                              className="w-4 h-4 accent-teal-600 mt-1"
+                            />
+                          </td>
                           <td className="px-2 py-2 text-center">
                             <button
                               onClick={() => toggle(expanded, setExpanded, c.threadId)}
@@ -599,13 +657,14 @@ export default function MailsPage() {
                             />
                           </td>
                           <td className="px-2 py-2">
-                            <SelectCell
-                              value={c.status}
-                              options={STATUSES}
-                              empty={null}
-                              onSave={save("status")}
-                              className={`font-semibold min-w-[110px] ${STATUS_STYLE[c.status] ?? ""}`}
-                            />
+                            <span
+                              title="Tự động: chỉ có mail đầu tiên = Chưa xử lý · có phản hồi / import gộp = Đang xử lý · có ngày hoàn thành = Đã xử lý"
+                              className={`inline-block whitespace-nowrap px-2 py-1 rounded-md border text-[11px] font-semibold ${
+                                STATUS_STYLE[c.status] ?? ""
+                              }`}
+                            >
+                              {c.status}
+                            </span>
                           </td>
                           <td className="px-2 py-2">
                             <SelectCell value={c.pic} options={picOptions} onSave={save("pic")} />
@@ -614,22 +673,42 @@ export default function MailsPage() {
                             <TextCell value={c.partnerVerify} onSave={save("partnerVerify")} />
                           </td>
                           <td className="px-2 py-2">
-                            <input
-                              type="datetime-local"
-                              defaultValue={toLocalInput(c.completedAt)}
-                              key={c.completedAt ?? "none"}
-                              onBlur={(e) => {
-                                const v = e.target.value ? new Date(e.target.value).toISOString() : "";
-                                if ((v || null) !== c.completedAt) saveField(c.threadId, "completedAt", v);
-                              }}
-                              className={cellInput}
-                            />
+                            <button
+                              onClick={() => setPopup({ kind: "completedAt", c })}
+                              className={`w-full whitespace-nowrap px-2 py-1 rounded-md border text-[11px] ${
+                                c.completedAt
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold"
+                                  : "border-dashed border-gray-300 text-gray-400 hover:bg-gray-50"
+                              }`}
+                            >
+                              {c.completedAt ? `✔ ${fmtDateTime(c.completedAt)}` : "+ Chọn ngày"}
+                            </button>
                           </td>
-                          <td className="px-2 py-2 text-center whitespace-nowrap text-gray-700">
-                            {durationText(c.createdAt, c.completedAt) || "—"}
+                          <td
+                            className={`px-2 py-2 text-center whitespace-nowrap ${
+                              c.completedAt ? "text-emerald-700 font-semibold" : "text-amber-700"
+                            }`}
+                            title={c.completedAt ? "Đã hoàn thành" : "Đang chờ xử lý — cập nhật mỗi 5 phút"}
+                          >
+                            {c.completedAt
+                              ? durationText(c.createdAt, c.completedAt) || "—"
+                              : c.createdAt
+                                ? `⏳ ${durationText(c.createdAt, now)}`
+                                : "—"}
                           </td>
                           <td className="px-2 py-2">
-                            <SelectCell value={c.result} options={RESULTS} onSave={save("result")} />
+                            <button
+                              onClick={() => setPopup({ kind: "result", c })}
+                              className={`w-full whitespace-nowrap px-2 py-1 rounded-md border text-[11px] ${
+                                c.result === "Vi phạm"
+                                  ? "border-red-200 bg-red-50 text-red-700 font-semibold"
+                                  : c.result
+                                    ? "border-gray-300 bg-gray-50 text-gray-700 font-semibold"
+                                    : "border-dashed border-gray-300 text-gray-400 hover:bg-gray-50"
+                              }`}
+                            >
+                              {c.result ?? "+ Chọn kết quả"}
+                            </button>
                           </td>
                           <td className="px-2 py-2">
                             <TextCell value={c.sfCase} onSave={save("sfCase")} placeholder="Số case" />
@@ -684,6 +763,19 @@ export default function MailsPage() {
           </div>
         </div>
       </main>
+
+      {popup && (
+        <PickerModal
+          key={popup.kind + popup.c.threadId}
+          kind={popup.kind}
+          c={popup.c}
+          onClose={() => setPopup(null)}
+          onSave={async (v) => {
+            await saveField(popup.c.threadId, popup.kind, v);
+            setPopup(null);
+          }}
+        />
+      )}
 
       {showContacts && (
         <ContactsModal
@@ -865,6 +957,113 @@ function ContactsModal({
           </table>
         </div>
         {suggestions.length === 0 && null}
+      </div>
+    </div>
+  );
+}
+
+/** Popup chọn Ngày hoàn thành / Kết quả: OK mới lưu, "Xóa" để đưa sự vụ về chưa hoàn thành / chưa có kết quả. */
+function PickerModal({
+  kind,
+  c,
+  onClose,
+  onSave,
+}: {
+  kind: "completedAt" | "result";
+  c: MailCase;
+  onClose: () => void;
+  onSave: (v: string | null) => Promise<void>;
+}) {
+  const [date, setDate] = useState(() => toLocalInput(c.completedAt ?? new Date().toISOString()));
+  const [result, setResult] = useState<string>(c.result ?? "");
+  const [busy, setBusy] = useState(false);
+  const isDate = kind === "completedAt";
+  const current = isDate ? c.completedAt : c.result;
+
+  const run = async (v: string | null) => {
+    setBusy(true);
+    await onSave(v);
+    setBusy(false);
+  };
+  const ok = () => {
+    if (isDate) {
+      if (!date) return;
+      run(new Date(date).toISOString());
+    } else if (result) run(result);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h2 className="text-base font-bold text-gray-800">
+            {isDate ? "🗓 Ngày hoàn thành" : "⚖️ Kết quả xử lý"}
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{c.subject}</p>
+        </div>
+        {isDate ? (
+          <div className="space-y-2">
+            <input
+              type="datetime-local"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:border-emerald-500"
+            />
+            <div className="flex gap-2 text-[11px]">
+              <button
+                onClick={() => setDate(toLocalInput(new Date().toISOString()))}
+                className="px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50"
+              >
+                Bây giờ
+              </button>
+              {c.createdAt && (
+                <span className="text-gray-400 self-center">Ngày tạo: {fmtDateTime(c.createdAt)}</span>
+              )}
+            </div>
+            {c.createdAt && date && new Date(date).getTime() < new Date(c.createdAt).getTime() && (
+              <div className="text-[11px] text-red-600">⚠️ Trước ngày tạo sự vụ</div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {RESULTS.map((r) => (
+              <label
+                key={r}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${
+                  result === r ? "border-teal-500 bg-teal-50" : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <input type="radio" name="result" checked={result === r} onChange={() => setResult(r)} />
+                {r}
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            disabled={busy || (isDate ? !date : !result)}
+            onClick={ok}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-semibold disabled:opacity-50"
+          >
+            OK
+          </button>
+          {current && (
+            <button
+              disabled={busy}
+              onClick={() => run(null)}
+              title={isDate ? "Xóa ngày hoàn thành — sự vụ quay về chưa hoàn thành" : "Xóa kết quả"}
+              className="px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-sm"
+            >
+              Xóa
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="ml-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+          >
+            Hủy
+          </button>
+        </div>
       </div>
     </div>
   );

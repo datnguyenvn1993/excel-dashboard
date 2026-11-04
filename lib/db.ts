@@ -174,6 +174,8 @@ export async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_mail_cases_created ON mail_cases(created_at)`);
+    // Số lần import trùng thread (>1 = đã có phản hồi/gộp → "Đang xử lý").
+    await client.query(`ALTER TABLE mail_cases ADD COLUMN IF NOT EXISTS import_count INT NOT NULL DEFAULT 1`);
     // Danh bạ: email (hoặc "@domain") người nhận → tên đối tác.
     await client.query(`
       CREATE TABLE IF NOT EXISTS mail_partner_contacts (
