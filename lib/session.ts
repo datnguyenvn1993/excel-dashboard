@@ -6,3 +6,8 @@ export async function getSession(req: NextRequest) {
   const token = req.cookies.get("session")?.value;
   return token ? await verifyToken(token) : null;
 }
+
+/** Manager và admin được chỉnh sửa (quy trình...). */
+export function canManage(role: string | undefined | null): boolean {
+  return role === "admin" || role === "manager";
+}

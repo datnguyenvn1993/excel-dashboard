@@ -9,6 +9,7 @@ const TABS = [
   { href: "/", label: "📊 KPI tháng", adminOnly: false },
   { href: "/weekly", label: "📅 KPI tuần", adminOnly: false },
   { href: "/mails", label: "📧 Mail", adminOnly: false },
+  { href: "/workflows", label: "🧭 Workflow", adminOnly: false },
   { href: "/cameras", label: "🚦 Camera", adminOnly: false },
   { href: "/partners", label: "🗂 Danh mục partner", adminOnly: true },
 ] as const;
@@ -24,7 +25,7 @@ export function useIsAdmin(): boolean | null {
   return role === null ? null : role === "admin";
 }
 
-export default function AppNav({ active }: { active: "/" | "/weekly" | "/mails" | "/cameras" | "/partners" }) {
+export default function AppNav({ active }: { active: "/" | "/weekly" | "/mails" | "/workflows" | "/cameras" | "/partners" }) {
   const admin = useIsAdmin();
   const isAdmin = admin === true;
   const role = admin === null ? null : "";
