@@ -136,6 +136,8 @@ export async function initDB() {
         updated_by  TEXT
       )
     `);
+    // Danh sách user (ngoài Manager/Admin) được cấp quyền sửa riêng từng quy trình.
+    await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS editors TEXT[] NOT NULL DEFAULT '{}'`);
 
     // Danh sách camera giao thông (trang /cameras). Ảnh tải thẳng từ web Sở GTVT ở trình duyệt.
     await client.query(`

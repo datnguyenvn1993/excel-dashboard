@@ -11,6 +11,7 @@ import {
   Workflow,
   WorkflowData,
   WorkflowDoc,
+  canEditWorkflow,
   docKindFromUrl,
   emptyData,
 } from "@/lib/workflows";
@@ -40,15 +41,24 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 export default function WorkflowsPage() {
-  // Manager hoặc Admin được chỉnh sửa.
+  // Manager/Admin sửa mọi quy trình; user thường chỉ sửa quy trình được cấp quyền (editors).
   const [role, setRole] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
+  const [users, setUsers] = useState<{ username: string; displayName: string }[]>([]);
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => setRole(j?.user?.role ?? ""))
+      .then((j) => {
+        setRole(j?.user?.role ?? "");
+        setUsername(j?.user?.username ?? "");
+      })
       .catch(() => setRole(""));
+    fetch("/api/mail-cases/users", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((j) => setUsers(j.users ?? []))
+      .catch(() => {});
   }, []);
-  const canEdit = role === "admin" || role === "manager";
+  const isManager = role === "admin" || role === "manager";
 
   const [list, setList] = useState<Workflow[]>([]);
   const [curId, setCurId] = useState<string | null>(null);
@@ -60,6 +70,7 @@ export default function WorkflowsPage() {
   const [selStep, setSelStep] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("note");
   const [toast, setToast] = useState<string | null>(null);
+  const [showEditors, setShowEditors] = useState(false);
 
   const showToast = (m: string) => {
     setToast(m);
@@ -110,7 +121,7 @@ export default function WorkflowsPage() {
       const res = await fetch("/api/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: wf.id, name: wf.name, description: wf.description, data: wf.data }),
+        body: JSON.stringify({ id: wf.id, name: wf.name, description: wf.description, data: wf.data, editors: wf.editors }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
@@ -130,7 +141,7 @@ export default function WorkflowsPage() {
     const res = await fetch("/api/workflows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), description: "", data: emptyData() }),
+      body: JSON.stringify({ name: name.trim(), description: "", data: emptyData(), editors: [] }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return showToast(`✖ ${j.error ?? "Lỗi"}`);
@@ -147,6 +158,7 @@ export default function WorkflowsPage() {
     showToast("🗑️ Đã xóa quy trình");
   };
 
+  const canEdit = canEditWorkflow(role, username, wf?.editors);
   const selected = wf?.data.steps.find((s) => s.id === selStep) ?? null;
   const laneOf = (id: string) => wf?.data.lanes.find((l) => l.id === id);
 
@@ -175,6 +187,13 @@ export default function WorkflowsPage() {
                   }`}
                 >
                   {editMode ? "✓ Đang chỉnh sửa" : "✏️ Chỉnh sửa"}
+                </button>
+                <button
+                  onClick={() => setShowEditors(true)}
+                  title="Cấp quyền sửa quy trình này cho user"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/15 text-white border border-white/30"
+                >
+                  👥 Phân quyền{wf.editors.length ? ` (${wf.editors.length})` : ""}
                 </button>
                 <button
                   onClick={save}
@@ -216,7 +235,7 @@ export default function WorkflowsPage() {
               </button>
             ))
           )}
-          {canEdit && (
+          {isManager && (
             <button
               onClick={createWorkflow}
               className="w-full mt-2 p-2.5 border-2 border-dashed border-gray-300 rounded-lg text-teal-700 font-semibold text-xs hover:bg-gray-50"
@@ -224,7 +243,7 @@ export default function WorkflowsPage() {
               ➕ Quy trình mới
             </button>
           )}
-          {!loading && list.length === 0 && !canEdit && (
+          {!loading && list.length === 0 && !isManager && (
             <p className="text-xs text-gray-400 px-1 mt-2">Chưa có quy trình nào.</p>
           )}
         </aside>
@@ -239,6 +258,7 @@ export default function WorkflowsPage() {
             <Board
               wf={wf}
               editMode={editMode && canEdit}
+              canDelete={isManager}
               selStep={selStep}
               onSelect={(id) => {
                 setSelStep(id);
@@ -270,6 +290,22 @@ export default function WorkflowsPage() {
         )}
       </div>
 
+      {showEditors && wf && (
+        <EditorsModal
+          editors={wf.editors}
+          users={users}
+          onClose={() => setShowEditors(false)}
+          onToggle={(uname) => {
+            setWf((w) =>
+              w
+                ? { ...w, editors: w.editors.includes(uname) ? w.editors.filter((x) => x !== uname) : [...w.editors, uname] }
+                : w
+            );
+            setDirty(true);
+          }}
+        />
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-gray-900 text-white text-sm px-4 py-2 shadow-lg">
           {toast}
@@ -283,6 +319,7 @@ export default function WorkflowsPage() {
 function Board({
   wf,
   editMode,
+  canDelete,
   selStep,
   onSelect,
   onRename,
@@ -292,6 +329,7 @@ function Board({
 }: {
   wf: Workflow;
   editMode: boolean;
+  canDelete: boolean;
   selStep: string | null;
   onSelect: (id: string) => void;
   onRename: (name: string) => void;
@@ -355,7 +393,7 @@ function Board({
         {wf.updatedBy && (
           <span className="text-[11px] text-gray-400">· sửa bởi {wf.updatedBy}</span>
         )}
-        {editMode && (
+        {editMode && canDelete && (
           <button
             onClick={onDelete}
             className="ml-auto text-xs text-red-600 border border-red-200 rounded-md px-2 py-1 hover:bg-red-50"
@@ -910,6 +948,58 @@ function DocsTab({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Phân quyền sửa cho user ─────────────────────────────────────────────────
+function EditorsModal({
+  editors,
+  users,
+  onClose,
+  onToggle,
+}: {
+  editors: string[];
+  users: { username: string; displayName: string }[];
+  onClose: () => void;
+  onToggle: (username: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const list = users.filter(
+    (u) => !q.trim() || `${u.username} ${u.displayName}`.toLowerCase().includes(q.trim().toLowerCase())
+  );
+  return (
+    <div className="fixed inset-0 z-[55] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div>
+          <h2 className="text-base font-bold text-gray-800">👥 Phân quyền sửa quy trình</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Các user được chọn sẽ sửa được <b>riêng quy trình này</b>, không ảnh hưởng quy trình khác. Manager/Admin
+            luôn sửa được mọi quy trình. Nhớ bấm <b>💾 Lưu</b> sau khi chỉnh.
+          </p>
+        </div>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Tìm user..."
+          className="text-sm px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:border-emerald-500"
+        />
+        <div className="overflow-auto border border-gray-200 rounded-lg flex-1">
+          {list.length === 0 && <p className="text-xs text-gray-400 p-3 text-center">Không có user.</p>}
+          {list.map((u) => (
+            <label key={u.username} className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50">
+              <input type="checkbox" checked={editors.includes(u.username)} onChange={() => onToggle(u.username)} className="w-4 h-4 accent-teal-600" />
+              <span className="text-sm text-gray-800">{u.displayName || u.username}</span>
+              <span className="text-[11px] text-gray-400 ml-auto font-mono">{u.username}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+            Xong
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

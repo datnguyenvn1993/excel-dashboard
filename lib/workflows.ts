@@ -38,8 +38,19 @@ export interface Workflow {
   name: string;
   description: string;
   data: WorkflowData;
+  editors: string[]; // username được cấp quyền sửa riêng quy trình này
   updatedAt: string | null;
   updatedBy: string | null;
+}
+
+/** Ai được sửa một quy trình: Manager/Admin (mọi quy trình) hoặc user có trong editors. */
+export function canEditWorkflow(
+  role: string | null | undefined,
+  username: string | null | undefined,
+  editors: string[] | undefined
+): boolean {
+  if (role === "admin" || role === "manager") return true;
+  return !!username && !!editors && editors.includes(username);
 }
 
 export const LANE_COLORS = [
