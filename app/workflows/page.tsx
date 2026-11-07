@@ -94,7 +94,7 @@ export default function WorkflowsPage() {
   // Khi đổi quy trình đang chọn → nạp bản local mới.
   useEffect(() => {
     const found = list.find((w) => w.id === curId) ?? null;
-    setWf(found ? structuredClone(found) : null);
+    setWf(found ? { ...structuredClone(found), editors: found.editors ?? [] } : null);
     setDirty(false);
     setSelStep(null);
   }, [curId, list]);
@@ -193,7 +193,7 @@ export default function WorkflowsPage() {
                   title="Cấp quyền sửa quy trình này cho user"
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/15 text-white border border-white/30"
                 >
-                  👥 Phân quyền{wf.editors.length ? ` (${wf.editors.length})` : ""}
+                  👥 Phân quyền{wf.editors?.length ? ` (${wf.editors.length})` : ""}
                 </button>
                 <button
                   onClick={save}
@@ -292,7 +292,7 @@ export default function WorkflowsPage() {
 
       {showEditors && wf && (
         <EditorsModal
-          editors={wf.editors}
+          editors={wf.editors ?? []}
           users={users}
           onClose={() => setShowEditors(false)}
           onToggle={(uname) => {
@@ -362,8 +362,23 @@ function Board({
         const a = pt(steps[i].id, "bottom");
         const c = pt(steps[i + 1].id, "top");
         if (!a || !c) continue;
-        const my = (a.y + c.y) / 2;
-        ps.push(`M ${a.x} ${a.y} C ${a.x} ${my}, ${c.x} ${my}, ${c.x} ${c.y}`);
+        // Mũi tên vuông góc (elbow): xuống một đoạn → rẽ ngang → xuống vào bước sau.
+        if (Math.abs(c.x - a.x) < 1) {
+          ps.push(`M ${a.x} ${a.y} L ${c.x} ${c.y}`);
+        } else {
+          const dir = c.x > a.x ? 1 : -1;
+          // Đoạn ngang nằm giữa khoảng hở, chừa stub đủ dài để nhìn rõ góc vuông.
+          const turnY = Math.min(a.y + 22, (a.y + c.y) / 2);
+          const r = Math.min(8, Math.abs(c.x - a.x) / 2, turnY - a.y, c.y - turnY);
+          ps.push(
+            `M ${a.x} ${a.y}` +
+              ` L ${a.x} ${turnY - r}` +
+              ` Q ${a.x} ${turnY} ${a.x + dir * r} ${turnY}` +
+              ` L ${c.x - dir * r} ${turnY}` +
+              ` Q ${c.x} ${turnY} ${c.x} ${turnY + r}` +
+              ` L ${c.x} ${c.y}`
+          );
+        }
       }
       setPaths(ps);
       setDim({ w: board.scrollWidth, h: board.scrollHeight });
@@ -424,8 +439,8 @@ function Board({
 
           {/* Mũi tên */}
           <svg
-            className="absolute left-5 pointer-events-none"
-            style={{ top: 0, width: dim.w, height: dim.h, zIndex: 1 }}
+            className="absolute left-0 top-0 pointer-events-none"
+            style={{ width: dim.w, height: dim.h, zIndex: 1 }}
           >
             <defs>
               <marker id="wf-ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
@@ -443,7 +458,7 @@ function Board({
               const li = laneIndex.get(s.laneId) ?? 0;
               const lane = lanes[li];
               return (
-                <div key={s.id} className="relative" style={{ height: 104 }}>
+                <div key={s.id} className="relative" style={{ height: 150 }}>
                   <div
                     data-step={s.id}
                     onClick={() => onSelect(s.id)}
